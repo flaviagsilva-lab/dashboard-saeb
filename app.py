@@ -651,32 +651,31 @@ def legenda_niveis_html(etapa):
         + '</div>'
     )
 
-def ranking_municipios_ano(etapa, ano, disciplina):
+def ranking_municipios_ano(etapa, ano, disciplina, rede_comparacao):
+    """
+    Ranking municipal com filtro EXPLÍCITO de rede.
+
+    Importante:
+    - os municípios comparados pertencem somente à rede selecionada;
+    - não há prioridade automática entre redes;
+    - Barueri (Municipal) é tratada separadamente como referência.
+    """
     coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
 
     x = municipios[
         (municipios["Etapa"] == etapa) &
-        (municipios["Ano"] == ano)
+        (municipios["Ano"] == ano) &
+        (municipios["Rede"] == rede_comparacao)
     ].copy()
 
     x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
     x = x.dropna(subset=[coluna])
 
-    # Mesmo critério usado no Colab antigo:
-    # prioriza a rede Municipal; se não existir, utiliza Pública,
-    # depois Estadual e Federal.
-    prioridade = {
-        "Municipal": 0,
-        "Pública": 1,
-        "Estadual": 2,
-        "Federal": 3,
-    }
-    x["_Prioridade_Rede"] = x["Rede"].map(prioridade).fillna(9)
-
+    # Mantém um registro por município dentro da MESMA rede.
     x = (
         x.sort_values(
-            ["Município", "_Prioridade_Rede"],
-            ascending=[True, True]
+            ["Município", coluna],
+            ascending=[True, False]
         )
         .drop_duplicates("Município", keep="first")
         .copy()
@@ -702,6 +701,61 @@ def ranking_municipios_ano(etapa, ano, disciplina):
         .sort_values(["Posição", "Município"])
         .reset_index(drop=True)
     )
+
+def referencia_barueri_ano(etapa, ano, disciplina):
+    """
+    Retorna Barueri SEMPRE como Rede Municipal,
+    independentemente da rede usada para comparar os demais municípios.
+    """
+    coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
+
+    x = municipios[
+        (municipios["Município"] == "Barueri") &
+        (municipios["Rede"] == "Municipal") &
+        (municipios["Etapa"] == etapa) &
+        (municipios["Ano"] == ano)
+    ].copy()
+
+    if x.empty:
+        return None
+
+    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
+    x = x.dropna(subset=[coluna])
+
+    if x.empty:
+        return None
+
+    r = x.sort_values(coluna, ascending=False).iloc[0]
+
+    return {
+        "Município": "Barueri",
+        "Rede": "Municipal",
+        "Pontuação": r.get(coluna),
+        "Nível": r.get(coluna_nivel),
+        "Padrão": r.get(coluna_padrao),
+    }
+
+def posicao_referencia_no_universo(valor_referencia, ranking_rede, disciplina):
+    """
+    Calcula em qual posição a pontuação de Barueri Municipal ficaria
+    dentro do universo da rede selecionada.
+    """
+    if valor_referencia is None or pd.isna(valor_referencia):
+        return pd.NA
+
+    coluna, _, _ = colunas_disciplina(disciplina)
+
+    valores = pd.to_numeric(
+        ranking_rede[coluna],
+        errors="coerce"
+    ).dropna()
+
+    if valores.empty:
+        return pd.NA
+
+    # rank method=min: 1 + quantidade de valores estritamente maiores.
+    return int((valores > float(valor_referencia)).sum() + 1)
+
 
 def ranking_escolas_ano(etapa, ano, disciplina):
     coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
@@ -745,28 +799,52 @@ def ranking_escolas_ano(etapa, ano, disciplina):
         .reset_index(drop=True)
     )
 
-def comparar_rankings(entidade, etapa, disciplina, ano_ini, ano_fim):
+def comparar_rankings(
+    entidade,
+    etapa,
+    disciplina,
+    ano_ini,
+    ano_fim,
+    rede_comparacao=None
+):
     coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
 
     if entidade == "Município":
-        ini = ranking_municipios_ano(etapa, ano_ini, disciplina)
-        fim = ranking_municipios_ano(etapa, ano_fim, disciplina)
+        if rede_comparacao is None:
+            raise ValueError("rede_comparacao é obrigatória para ranking de municípios.")
+
+        ini = ranking_municipios_ano(
+            etapa,
+            ano_ini,
+            disciplina,
+            rede_comparacao
+        )
+        fim = ranking_municipios_ano(
+            etapa,
+            ano_fim,
+            disciplina,
+            rede_comparacao
+        )
         chave = "Município"
-        cols_ini = [
-            chave, "Rede", coluna, coluna_nivel, coluna_padrao, "Posição"
-        ]
-        cols_fim = cols_ini
+
+        ini = ini[
+            [chave, "Rede", coluna, coluna_nivel, coluna_padrao, "Posição"]
+        ].copy()
+        fim = fim[
+            [chave, "Rede", coluna, coluna_nivel, coluna_padrao, "Posição"]
+        ].copy()
+
     else:
         ini = ranking_escolas_ano(etapa, ano_ini, disciplina)
         fim = ranking_escolas_ano(etapa, ano_fim, disciplina)
         chave = "Escola"
-        cols_ini = [
-            chave, coluna, coluna_nivel, coluna_padrao, "Posição"
-        ]
-        cols_fim = cols_ini
 
-    ini = ini[cols_ini].copy()
-    fim = fim[cols_fim].copy()
+        ini = ini[
+            [chave, coluna, coluna_nivel, coluna_padrao, "Posição"]
+        ].copy()
+        fim = fim[
+            [chave, coluna, coluna_nivel, coluna_padrao, "Posição"]
+        ].copy()
 
     ren_ini = {
         coluna: "Pontuação Inicial",
@@ -774,6 +852,7 @@ def comparar_rankings(entidade, etapa, disciplina, ano_ini, ano_fim):
         coluna_padrao: "Padrão Inicial",
         "Posição": "Posição Inicial",
     }
+
     ren_fim = {
         coluna: "Pontuação Atual",
         coluna_nivel: "Nível Atual",
@@ -809,12 +888,142 @@ def comparar_rankings(entidade, etapa, disciplina, ano_ini, ano_fim):
     comp["Nível Atual Texto"] = comp["Nível Atual"].apply(
         lambda x: "—" if pd.isna(x) else f"Nível {int(x)}"
     )
+
     comp["Nível Inicial Texto"] = comp["Nível Inicial"].apply(
         lambda x: "—" if pd.isna(x) else f"Nível {int(x)}"
     )
 
     return comp.sort_values(
         ["Posição Atual", chave]
+    ).reset_index(drop=True)
+
+
+
+def adicionar_barueri_referencia(
+    comp,
+    etapa,
+    disciplina,
+    ano_ini,
+    ano_fim,
+    rede_comparacao
+):
+    """
+    Adiciona Barueri Municipal à tabela comparativa como referência.
+    Sua posição é calculada dentro do universo da rede escolhida.
+    """
+    bar_ini = referencia_barueri_ano(
+        etapa,
+        ano_ini,
+        disciplina
+    )
+    bar_fim = referencia_barueri_ano(
+        etapa,
+        ano_fim,
+        disciplina
+    )
+
+    if bar_fim is None:
+        return comp
+
+    rank_ini = ranking_municipios_ano(
+        etapa,
+        ano_ini,
+        disciplina,
+        rede_comparacao
+    )
+    rank_fim = ranking_municipios_ano(
+        etapa,
+        ano_fim,
+        disciplina,
+        rede_comparacao
+    )
+
+    pos_ini = (
+        posicao_referencia_no_universo(
+            bar_ini["Pontuação"],
+            rank_ini,
+            disciplina
+        )
+        if bar_ini is not None
+        else pd.NA
+    )
+
+    pos_fim = posicao_referencia_no_universo(
+        bar_fim["Pontuação"],
+        rank_fim,
+        disciplina
+    )
+
+    nivel_ini = (
+        bar_ini["Nível"]
+        if bar_ini is not None
+        else pd.NA
+    )
+
+    nivel_fim = bar_fim["Nível"]
+
+    variacao_pos = (
+        pos_ini - pos_fim
+        if pd.notna(pos_ini) and pd.notna(pos_fim)
+        else pd.NA
+    )
+
+    variacao_nivel = (
+        float(nivel_fim) - float(nivel_ini)
+        if pd.notna(nivel_ini) and pd.notna(nivel_fim)
+        else pd.NA
+    )
+
+    linha = {
+        "Município": "Barueri",
+        "Rede Atual": "Municipal (referência)",
+        "Pontuação Atual": bar_fim["Pontuação"],
+        "Nível Atual": nivel_fim,
+        "Padrão Atual": bar_fim["Padrão"],
+        "Posição Atual": pos_fim,
+        "Rede Inicial": "Municipal (referência)",
+        "Pontuação Inicial": (
+            bar_ini["Pontuação"]
+            if bar_ini is not None
+            else pd.NA
+        ),
+        "Nível Inicial": nivel_ini,
+        "Padrão Inicial": (
+            bar_ini["Padrão"]
+            if bar_ini is not None
+            else pd.NA
+        ),
+        "Posição Inicial": pos_ini,
+        "Variação de Posição": variacao_pos,
+        "Variação de Nível": variacao_nivel,
+        "Movimento": texto_movimento(variacao_pos),
+        "Mudança de Nível": texto_mudanca_nivel(variacao_nivel),
+        "Nível Atual Texto": (
+            "—" if pd.isna(nivel_fim)
+            else f"Nível {int(float(nivel_fim))}"
+        ),
+        "Nível Inicial Texto": (
+            "—" if pd.isna(nivel_ini)
+            else f"Nível {int(float(nivel_ini))}"
+        ),
+        "_Referencia": True,
+    }
+
+    comp2 = comp.copy()
+    comp2["_Referencia"] = False
+
+    # Evita duplicar Barueri se a rede selecionada também for Municipal.
+    comp2 = comp2[
+        comp2["Município"] != "Barueri"
+    ]
+
+    comp2 = pd.concat(
+        [comp2, pd.DataFrame([linha])],
+        ignore_index=True
+    )
+
+    return comp2.sort_values(
+        ["Posição Atual", "Município"]
     ).reset_index(drop=True)
 
 def grafico_ranking_movimento(
@@ -825,30 +1034,40 @@ def grafico_ranking_movimento(
     ano_ini,
     ano_fim,
     quantidade=20,
-    destaque=None
+    destaque=None,
+    rede_comparacao=None
 ):
     chave = "Município" if entidade == "Município" else "Escola"
     cores = cores_niveis(etapa)
 
+    base_plot = comp.copy()
+
     if quantidade == "Todos":
-        plot = comp.copy()
+        plot = base_plot.copy()
     else:
-        plot = comp.head(int(quantidade)).copy()
+        if entidade == "Município" and "_Referencia" in base_plot.columns:
+            referencia = base_plot[
+                base_plot["_Referencia"] == True
+            ].copy()
 
-    # Barueri deve aparecer mesmo fora do Top N.
-    if entidade == "Município" and "Barueri" in comp[chave].values:
-        if "Barueri" not in plot[chave].values:
-            plot = pd.concat(
-                [plot, comp[comp[chave] == "Barueri"]],
-                ignore_index=True
-            )
+            universo = base_plot[
+                base_plot["_Referencia"] != True
+            ].copy()
 
-    # Para escolas, uma unidade escolhida pode ser mantida no gráfico
-    # mesmo se estiver fora do Top N.
+            plot = universo.head(int(quantidade)).copy()
+
+            if not referencia.empty:
+                plot = pd.concat(
+                    [plot, referencia],
+                    ignore_index=True
+                )
+        else:
+            plot = base_plot.head(int(quantidade)).copy()
+
     if entidade == "Escola" and destaque and destaque != "Nenhuma":
-        if destaque in comp[chave].values and destaque not in plot[chave].values:
+        if destaque in base_plot[chave].values and destaque not in plot[chave].values:
             plot = pd.concat(
-                [plot, comp[comp[chave] == destaque]],
+                [plot, base_plot[base_plot[chave] == destaque]],
                 ignore_index=True
             )
 
@@ -879,6 +1098,11 @@ def grafico_ranking_movimento(
         plot["Nível Atual Texto"].fillna("—"),
         plot["Mudança de Nível"].fillna("—"),
         plot["Padrão Atual"].fillna("—"),
+        (
+            plot["Rede Atual"].fillna("—")
+            if "Rede Atual" in plot.columns
+            else pd.Series(["—"] * len(plot))
+        ),
     ])
 
     fig = go.Figure()
@@ -901,19 +1125,30 @@ def grafico_ranking_movimento(
                 "Nível inicial: %{customdata[4]}<br>"
                 "Nível atual: %{customdata[5]}<br>"
                 "Mudança de nível: %{customdata[6]}<br>"
-                "Padrão atual: %{customdata[7]}"
+                "Padrão atual: %{customdata[7]}<br>"
+                "Rede: %{customdata[8]}"
                 "<extra></extra>"
             )
         )
     )
 
-    titulo_entidade = "municípios" if entidade == "Município" else "escolas"
+    titulo_entidade = (
+        "municípios"
+        if entidade == "Município"
+        else "escolas"
+    )
+
+    subtitulo_rede = (
+        f" • Rede de comparação: {rede_comparacao}"
+        if entidade == "Município" and rede_comparacao
+        else ""
+    )
 
     fig.update_layout(
         title=dict(
             text=(
                 f"Ranking de {titulo_entidade} — {disciplina} — "
-                f"{etapa} — {ano_fim}"
+                f"{etapa} — {ano_fim}{subtitulo_rede}"
             ),
             x=.01,
             xanchor="left",
@@ -922,22 +1157,27 @@ def grafico_ranking_movimento(
         height=max(520, len(plot) * 34),
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=40, r=170, t=75, b=45),
+        margin=dict(l=40, r=180, t=85, b=45),
         showlegend=False,
         xaxis_title=f"Proficiência em {disciplina}",
         yaxis_title="",
-        font=dict(family="Arial, sans-serif", color="#26313b"),
+        font=dict(
+            family="Arial, sans-serif",
+            color="#26313b"
+        ),
     )
 
     fig.update_xaxes(
         gridcolor="#EDF1F4",
         zeroline=False
     )
+
     fig.update_yaxes(
         showgrid=False
     )
 
     return fig
+
 
 def tabela_ranking_exibicao(comp, entidade):
     chave = "Município" if entidade == "Município" else "Escola"
@@ -1659,14 +1899,16 @@ elif pagina == "Aprendizagem":
                 '<div class="section-title">Ranking entre municípios</div>',
                 unsafe_allow_html=True
             )
+
             st.markdown(
-                '<div class="hero-sub">Compare a posição inicial e final, veja quantas posições '
-                'cada município subiu ou desceu e em qual nível de proficiência se encontra.</div>',
+                '<div class="hero-sub">Barueri permanece sempre como <b>Rede Municipal</b>. '
+                'Os demais municípios são comparados somente dentro da rede selecionada: '
+                'Municipal, Pública, Estadual ou Federal.</div>',
                 unsafe_allow_html=True
             )
 
             with st.form("form_ranking_municipios"):
-                c1,c2,c3,c4 = st.columns([1.3,1.5,1,1])
+                c1,c2,c3 = st.columns([1.2,1.4,1.3])
 
                 with c1:
                     etapa_m = st.selectbox(
@@ -1682,15 +1924,41 @@ elif pagina == "Aprendizagem":
                         key="rank_m_disc"
                     )
 
+                redes_disponiveis = [
+                    r for r in ["Municipal", "Pública", "Estadual", "Federal"]
+                    if (
+                        (
+                            municipios["Etapa"] == etapa_m
+                        ) &
+                        (
+                            municipios["Rede"] == r
+                        )
+                    ).any()
+                ]
+
+                with c3:
+                    rede_m = st.selectbox(
+                        "Rede de comparação",
+                        redes_disponiveis,
+                        key="rank_m_rede"
+                    )
+
                 anos_m = sorted(
                     int(a)
                     for a in municipios.loc[
-                        municipios["Etapa"] == etapa_m,
+                        (
+                            municipios["Etapa"] == etapa_m
+                        ) &
+                        (
+                            municipios["Rede"] == rede_m
+                        ),
                         "Ano"
                     ].dropna().unique()
                 )
 
-                with c3:
+                c4,c5,c6 = st.columns([1,1,1.2])
+
+                with c4:
                     ano_ini_m = st.selectbox(
                         "Ano inicial",
                         anos_m[:-1],
@@ -1698,9 +1966,12 @@ elif pagina == "Aprendizagem":
                         key="rank_m_ini"
                     )
 
-                finais_m = [a for a in anos_m if a > ano_ini_m]
+                finais_m = [
+                    a for a in anos_m
+                    if a > ano_ini_m
+                ]
 
-                with c4:
+                with c5:
                     ano_fim_m = st.selectbox(
                         "Ano final",
                         finais_m,
@@ -1708,12 +1979,13 @@ elif pagina == "Aprendizagem":
                         key="rank_m_fim"
                     )
 
-                quantidade_m = st.selectbox(
-                    "Quantidade exibida no gráfico",
-                    [10, 20, 30, 50, "Todos"],
-                    index=1,
-                    key="rank_m_qtd"
-                )
+                with c6:
+                    quantidade_m = st.selectbox(
+                        "Quantidade no gráfico",
+                        [10, 20, 30, 50, "Todos"],
+                        index=1,
+                        key="rank_m_qtd"
+                    )
 
                 st.form_submit_button(
                     "Aplicar ranking",
@@ -1725,7 +1997,46 @@ elif pagina == "Aprendizagem":
                 etapa_m,
                 disciplina_m,
                 ano_ini_m,
-                ano_fim_m
+                ano_fim_m,
+                rede_comparacao=rede_m
+            )
+
+            comp_m = adicionar_barueri_referencia(
+                comp_m,
+                etapa_m,
+                disciplina_m,
+                ano_ini_m,
+                ano_fim_m,
+                rede_m
+            )
+
+            universo_sem_barueri = comp_m[
+                comp_m.get(
+                    "_Referencia",
+                    False
+                ) != True
+            ]
+
+            total_atual = universo_sem_barueri[
+                "Município"
+            ].nunique()
+
+            total_inicial = ranking_municipios_ano(
+                etapa_m,
+                ano_ini_m,
+                disciplina_m,
+                rede_m
+            )["Município"].nunique()
+
+            st.markdown(
+                f'<div class="info">'
+                f'<b>Universo da comparação:</b> '
+                f'{total_atual} municípios com resultado em {ano_fim_m} '
+                f'na Rede {rede_m} — {etapa_m}. '
+                f'No ano inicial ({ano_ini_m}), havia {total_inicial}. '
+                f'<br><b>Referência fixa:</b> Barueri — Rede Municipal.'
+                f'</div>',
+                unsafe_allow_html=True
             )
 
             st.markdown(
@@ -1734,7 +2045,9 @@ elif pagina == "Aprendizagem":
             )
 
             if comp_m.empty:
-                st.info("Não há dados suficientes para montar o ranking selecionado.")
+                st.info(
+                    "Não há dados suficientes para montar o ranking selecionado."
+                )
             else:
                 barueri = comp_m[
                     comp_m["Município"] == "Barueri"
@@ -1747,13 +2060,20 @@ elif pagina == "Aprendizagem":
 
                     c1.metric(
                         "Barueri • posição inicial",
-                        f'{int(b["Posição Inicial"])}º'
-                        if pd.notna(b["Posição Inicial"]) else "—"
+                        (
+                            f'{int(b["Posição Inicial"])}º'
+                            if pd.notna(b["Posição Inicial"])
+                            else "—"
+                        )
                     )
 
                     c2.metric(
                         "Barueri • posição atual",
-                        f'{int(b["Posição Atual"])}º'
+                        (
+                            f'{int(b["Posição Atual"])}º'
+                            if pd.notna(b["Posição Atual"])
+                            else "—"
+                        )
                     )
 
                     c3.metric(
@@ -1774,7 +2094,8 @@ elif pagina == "Aprendizagem":
                         disciplina_m,
                         ano_ini_m,
                         ano_fim_m,
-                        quantidade=quantidade_m
+                        quantidade=quantidade_m,
+                        rede_comparacao=rede_m
                     ),
                     use_container_width=True
                 )
@@ -1796,7 +2117,6 @@ elif pagina == "Aprendizagem":
                     height=520
                 )
 
-        # ====================================================
         # RANKING DE ESCOLAS
         # ====================================================
         with abas_apr[3]:
@@ -1985,6 +2305,18 @@ elif pagina == "Território":
             int(a) for a in base_bar["Ano"].dropna().unique()
         )
 
+        rede_territorio = st.selectbox(
+            "Rede de comparação",
+            [
+                r for r in ["Municipal", "Pública", "Estadual", "Federal"]
+                if (
+                    (municipios["Etapa"] == etapa) &
+                    (municipios["Rede"] == r)
+                ).any()
+            ],
+            key="ter_rede_comparacao"
+        )
+
         busca_municipio = st.text_input(
             "Buscar município",
             placeholder='Ex.: "sao" encontra "São Paulo"',
@@ -1998,6 +2330,7 @@ elif pagina == "Território":
             busca_municipio,
             filtro=(
                 (municipios["Etapa"] == etapa) &
+                (municipios["Rede"] == rede_territorio) &
                 (municipios["Município"] != "Barueri")
             )
         )
@@ -2043,7 +2376,34 @@ elif pagina == "Território":
             )
 
         bar = dados_municipio(
-            "Barueri", etapa, ano_ini, ano_fim
+            "Barueri",
+            etapa,
+            ano_ini,
+            ano_fim,
+            rede="Municipal"
+        )
+
+        def dados_municipio_rede_selecionada(nome):
+            x = municipios[
+                (municipios["Município"] == nome) &
+                (municipios["Etapa"] == etapa) &
+                (municipios["Rede"] == rede_territorio) &
+                (municipios["Ano"].between(ano_ini, ano_fim))
+            ].copy()
+            return x.sort_values("Ano")
+
+        total_rede_territorio = municipios.loc[
+            (municipios["Etapa"] == etapa) &
+            (municipios["Rede"] == rede_territorio) &
+            (municipios["Ano"] == ano_fim),
+            "Município"
+        ].nunique()
+
+        st.markdown(
+            f'<div class="info"><b>Referência:</b> Barueri — Rede Municipal. '
+            f'<b>Comparação:</b> Rede {rede_territorio} — {etapa}. '
+            f'<b>Municípios com registro em {ano_fim}:</b> {total_rede_territorio}.</div>',
+            unsafe_allow_html=True
         )
 
         st.markdown(
@@ -2053,9 +2413,7 @@ elif pagina == "Território":
 
         if outros:
             comp = outros[0]
-            dc = dados_municipio(
-                comp, etapa, ano_ini, ano_fim
-            )
+            dc = dados_municipio_rede_selecionada(comp)
             st.plotly_chart(
                 grafico_comparacao_lp_mat(
                     bar,
@@ -2102,10 +2460,8 @@ elif pagina == "Território":
         for nome in outros:
             datasets.append(
                 (
-                    nome,
-                    dados_municipio(
-                        nome, etapa, ano_ini, ano_fim
-                    )
+                    f"{nome} — {rede_territorio}",
+                    dados_municipio_rede_selecionada(nome)
                 )
             )
 
@@ -2134,13 +2490,28 @@ elif pagina == "Território":
         rows = []
 
         for nome in nomes:
-            d = dados_municipio(
-                nome, etapa, ano_ref, ano_ref
-            )
+            if nome == "Barueri":
+                d = dados_municipio(
+                    "Barueri",
+                    etapa,
+                    ano_ref,
+                    ano_ref,
+                    rede="Municipal"
+                )
+                nome_exibido = "Barueri — Municipal"
+            else:
+                d = municipios[
+                    (municipios["Município"] == nome) &
+                    (municipios["Etapa"] == etapa) &
+                    (municipios["Rede"] == rede_territorio) &
+                    (municipios["Ano"] == ano_ref)
+                ].copy()
+                nome_exibido = f"{nome} — {rede_territorio}"
+
             if not d.empty:
                 r = d.iloc[-1]
                 rows.append({
-                    "Município": nome,
+                    "Município": nome_exibido,
                     "N": r.get("N"),
                     "P": r.get("P"),
                     "IDEB": r.get("IDEB")
