@@ -1,44 +1,70 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
-import unicodedata
 from pathlib import Path
 
-# ============================================================
-# CONFIGURAÇÃO
-# ============================================================
 st.set_page_config(
-    page_title="Painel de Indicadores Educacionais",
+    page_title="Painel Saeb • Rede Municipal de Ensino de Barueri",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
-st.markdown("""
-<style>
-.block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
-[data-testid="stMetric"] {
-    border: 1px solid rgba(49,51,63,.18);
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: rgba(250,250,250,.6);
-}
-h1, h2, h3 {letter-spacing: -0.02em;}
-.small-note {font-size:.88rem; opacity:.72;}
-</style>
-""", unsafe_allow_html=True)
+AZUL = "#0E5A70"
+ROSA = "#C76D8A"
+LILAS = "#8E6BBE"
+AZUL_COMP = "#4F86C6"
+VERDE_COMP = "#65A88A"
+LARANJA = "#E58A2B"
+LILAS_P = "#8064A2"
+VERDE = "#2E8B57"
+VERMELHO = "#B83A3A"
+CINZA = "#6B7280"
+FUNDO = "#F8FAFB"
 
+st.markdown(
+    f"""
+    <style>
+    .stApp {{background: {FUNDO};}}
+    .block-container {{max-width: 1500px; padding-top: 1rem; padding-bottom: 3rem;}}
+    header[data-testid="stHeader"] {{background: rgba(0,0,0,0);}}
+    [data-testid="stSidebar"] {{display:none;}}
+    .brand {{display:flex; align-items:center; gap:14px; padding:6px 0 2px 0;}}
+    .brand-icon {{
+        background:{AZUL}; color:white; font-weight:800; width:44px;height:44px;border-radius:10px;
+        display:flex;align-items:center;justify-content:center;font-size:13px;letter-spacing:.5px;
+    }}
+    .brand-title {{font-size:21px;font-weight:750;color:#17212b;line-height:1.05;}}
+    .brand-sub {{font-size:12px;color:{CINZA};margin-top:3px;}}
+    .eyebrow {{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:{CINZA};font-weight:700;}}
+    .hero-title {{font-size:28px;font-weight:780;color:#17212b;margin:.15rem 0 .2rem 0;}}
+    .hero-sub {{font-size:14px;color:{CINZA};max-width:900px;}}
+    .section-title {{font-size:20px;font-weight:750;color:#17212b;margin-top:8px;}}
+    .note {{background:#FFF7E5;border:1px solid #F5D79A;border-radius:10px;padding:10px 13px;font-size:13px;color:#6c5425;}}
+    .info {{background:#EFF7F9;border:1px solid #C9E2E8;border-radius:10px;padding:10px 13px;font-size:13px;color:#335a64;}}
+    .metric-card {{
+        background:white;border:1px solid #E5E7EB;border-radius:14px;padding:17px 18px;min-height:118px;
+        box-shadow:0 1px 2px rgba(0,0,0,.02);
+    }}
+    .metric-label {{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:{CINZA};font-weight:700;}}
+    .metric-value {{font-size:28px;font-weight:780;color:#17212b;margin-top:6px;}}
+    .metric-foot {{font-size:12px;color:{CINZA};margin-top:4px;}}
+    .stTabs [data-baseweb="tab-list"] {{gap:8px; flex-wrap:wrap;}}
+    .stTabs [data-baseweb="tab"] {{background:white;border:1px solid #E5E7EB;border-radius:9px;padding:8px 14px;}}
+    .stTabs [aria-selected="true"] {{background:{AZUL}!important;color:white!important;border-color:{AZUL}!important;}}
+    div[data-testid="stPlotlyChart"] {{background:white;border:1px solid #E5E7EB;border-radius:14px;padding:7px;}}
+    .footer {{font-size:11px;color:{CINZA};padding-top:25px;}}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# ============================================================
-# CARREGAMENTO + PRÉ-PROCESSAMENTO CACHEADO
-# ============================================================
 def _normalizar_serie(s: pd.Series) -> pd.Series:
-    # Vetorização Pandas; a transformação ocorre somente dentro do cache.
     return (
         s.astype("string")
          .str.normalize("NFKD")
@@ -48,448 +74,555 @@ def _normalizar_serie(s: pd.Series) -> pd.Series:
          .str.strip()
     )
 
-
-@st.cache_data(show_spinner="Carregando bases...")
+@st.cache_data(show_spinner="Carregando dados educacionais...")
 def carregar_bases():
-    municipios = pd.read_csv(DATA_DIR / "base_municipios.csv", encoding="utf-8-sig")
-    escolas = pd.read_csv(DATA_DIR / "base_escolas.csv", encoding="utf-8-sig")
-    investimento = pd.read_csv(DATA_DIR / "investimento_inep.csv", encoding="utf-8-sig")
+    mun = pd.read_csv(DATA_DIR / "base_municipios.csv", encoding="utf-8-sig")
+    esc = pd.read_csv(DATA_DIR / "base_escolas.csv", encoding="utf-8-sig")
+    inv = pd.read_csv(DATA_DIR / "investimento_inep.csv", encoding="utf-8-sig")
 
-    municipios["Município_Busca"] = _normalizar_serie(municipios["Município"])
-    escolas["Escola_Busca"] = _normalizar_serie(escolas["Escola"])
+    mun["Município_Busca"] = _normalizar_serie(mun["Município"])
+    esc["Escola_Busca"] = _normalizar_serie(esc["Escola"])
 
-    for df in (municipios, escolas, investimento):
-        if "Ano" in df.columns:
-            df["Ano"] = pd.to_numeric(df["Ano"], errors="coerce").astype("Int64")
+    for df in (mun, esc, inv):
+        df["Ano"] = pd.to_numeric(df["Ano"], errors="coerce").astype("Int64")
 
-    return municipios, escolas, investimento
+    num_cols = [
+        "Matemática","Língua Portuguesa","N","P","Aprovação Geral",
+        "1º","2º","3º","4º","5º","6º","7º","8º","9º",
+        "IDEB","Meta IDEB","Diferença para Meta",
+        "Nível Matemática","Nível Língua Portuguesa"
+    ]
+    for df in (mun, esc):
+        for c in num_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
 
+    inv["Investimento por Estudante"] = pd.to_numeric(
+        inv["Investimento por Estudante"], errors="coerce"
+    )
+    return mun, esc, inv
 
 municipios, escolas, investimento = carregar_bases()
 
 ANOS = sorted(int(x) for x in municipios["Ano"].dropna().unique())
-ETAPAS = [x for x in ["Fundamental I", "Fundamental II"] if x in municipios["Etapa"].dropna().unique()]
-INDICADORES = ["IDEB", "Matemática", "Língua Portuguesa", "N", "P", "Aprovação Geral"]
-SERIES_FI = ["1º", "2º", "3º", "4º", "5º"]
-SERIES_FII = ["6º", "7º", "8º", "9º"]
+ETAPAS = ["Fundamental I", "Fundamental II"]
+SERIES = {
+    "Fundamental I": ["1º","2º","3º","4º","5º"],
+    "Fundamental II": ["6º","7º","8º","9º"],
+}
 
+def fmt(v, casas=2, sufixo=""):
+    if pd.isna(v):
+        return "—"
+    return f"{float(v):.{casas}f}{sufixo}".replace(".", ",")
 
-# ============================================================
-# FUNÇÕES
-# ============================================================
-def barueri_referencia(df, etapa=None):
-    x = df[df["Município"].eq("Barueri")]
-    if "Rede" in x.columns and (x["Rede"] == "Municipal").any():
-        x = x[x["Rede"].eq("Municipal")]
-    if etapa:
-        x = x[x["Etapa"].eq(etapa)]
-    return x.copy()
+def escolher_rede(nome, etapa):
+    redes = municipios.loc[
+        (municipios["Município"] == nome) & (municipios["Etapa"] == etapa), "Rede"
+    ].dropna().unique().tolist()
+    for preferida in ["Municipal", "Pública", "Estadual", "Federal"]:
+        if preferida in redes:
+            return preferida
+    return redes[0] if redes else None
 
-
-def filtrar_municipio(nome, etapa, ano_ini, ano_fim, rede=None):
+def dados_municipio(nome, etapa, ano_ini=None, ano_fim=None, rede=None):
     x = municipios[
-        municipios["Município"].eq(nome)
-        & municipios["Etapa"].eq(etapa)
-        & municipios["Ano"].between(ano_ini, ano_fim)
+        (municipios["Município"] == nome) & (municipios["Etapa"] == etapa)
     ].copy()
-    if rede and "Rede" in x.columns:
-        x = x[x["Rede"].eq(rede)]
-    elif nome == "Barueri" and "Rede" in x.columns and (x["Rede"] == "Municipal").any():
-        x = x[x["Rede"].eq("Municipal")]
+    rede = rede or escolher_rede(nome, etapa)
+    if rede is not None:
+        x = x[x["Rede"] == rede]
+    if ano_ini is not None:
+        x = x[x["Ano"] >= ano_ini]
+    if ano_fim is not None:
+        x = x[x["Ano"] <= ano_fim]
     return x.sort_values("Ano")
 
+def dados_escola(nome, etapa, ano_ini=None, ano_fim=None):
+    x = escolas[
+        (escolas["Escola"] == nome) & (escolas["Etapa"] == etapa)
+    ].copy()
+    if ano_ini is not None:
+        x = x[x["Ano"] >= ano_ini]
+    if ano_fim is not None:
+        x = x[x["Ano"] <= ano_fim]
+    return x.sort_values("Ano")
 
-def redes_do_municipio(nome, etapa):
-    vals = municipios.loc[
-        municipios["Município"].eq(nome) & municipios["Etapa"].eq(etapa), "Rede"
-    ].dropna().unique().tolist()
-    return sorted(vals)
+def ultima_linha(df, ano=None):
+    if ano is not None:
+        x = df[df["Ano"] == ano]
+        if not x.empty:
+            return x.iloc[-1]
+    x = df.dropna(subset=["Ano"]).sort_values("Ano")
+    return x.iloc[-1] if not x.empty else None
 
+def estilo_fig(fig, titulo=None, ytitle=None, height=460):
+    fig.update_layout(
+        title=dict(text=titulo or "", x=.01, xanchor="left", font=dict(size=18)),
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=35, r=35, t=70, b=40),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.10, x=0),
+        font=dict(family="Arial, sans-serif", color="#26313b"),
+    )
+    fig.update_xaxes(showgrid=False, linecolor="#DDE3E8", tickmode="array", tickvals=ANOS)
+    fig.update_yaxes(gridcolor="#EDF1F4", zeroline=False, title=ytitle)
+    return fig
 
-def fig_linhas_comparacao(datasets, indicador, titulo, y_title=None):
+def grafico_ideb_meta(df, titulo):
     fig = go.Figure()
-    for rotulo, df in datasets:
-        if df.empty or indicador not in df:
-            continue
+    fig.add_trace(go.Scatter(
+        x=df["Ano"], y=df["IDEB"], mode="lines+markers+text",
+        text=[fmt(v,1) if pd.notna(v) else "" for v in df["IDEB"]],
+        textposition="top center", name="IDEB",
+        line=dict(color=AZUL, width=3), marker=dict(size=8)
+    ))
+    if df["Meta IDEB"].notna().any():
         fig.add_trace(go.Scatter(
-            x=df["Ano"], y=df[indicador],
-            mode="lines+markers",
-            name=rotulo,
-            connectgaps=False,
-            hovertemplate="%{x}<br>%{y:.2f}<extra>%{fullData.name}</extra>",
+            x=df["Ano"], y=df["Meta IDEB"], mode="lines+markers",
+            name="Meta IDEB", line=dict(color=VERDE_COMP, width=2, dash="dot")
         ))
-    fig.update_layout(
-        title=titulo, height=470, hovermode="x unified",
-        xaxis=dict(tickmode="array", tickvals=ANOS),
-        yaxis_title=y_title or indicador,
-        legend_title_text="",
-        margin=dict(l=30, r=30, t=70, b=30),
-    )
-    return fig
+    return estilo_fig(fig, titulo, "IDEB", 475)
 
-
-def fig_lp_mat(df, titulo):
+def grafico_lp_mat(df, titulo, modo="linhas"):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["Ano"], y=df["Língua Portuguesa"],
-        mode="lines+markers", name="Língua Portuguesa"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df["Ano"], y=df["Matemática"],
-        mode="lines+markers", name="Matemática"
-    ))
-    fig.update_layout(
-        title=titulo, height=460, hovermode="x unified",
-        xaxis=dict(tickmode="array", tickvals=ANOS),
-        yaxis_title="Proficiência SAEB", legend_title_text=""
-    )
-    return fig
+    if modo == "linhas":
+        fig.add_trace(go.Scatter(
+            x=df["Ano"], y=df["Língua Portuguesa"], mode="lines+markers+text",
+            text=[fmt(v,1) if pd.notna(v) else "" for v in df["Língua Portuguesa"]],
+            textposition="top center", name="Língua Portuguesa",
+            line=dict(color=ROSA, width=3), marker=dict(size=8)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df["Ano"], y=df["Matemática"], mode="lines+markers+text",
+            text=[fmt(v,1) if pd.notna(v) else "" for v in df["Matemática"]],
+            textposition="bottom center", name="Matemática",
+            line=dict(color=LILAS, width=3), marker=dict(size=8)
+        ))
+    else:
+        fig.add_trace(go.Bar(x=df["Ano"], y=df["Língua Portuguesa"], name="Língua Portuguesa", marker_color=ROSA))
+        fig.add_trace(go.Bar(x=df["Ano"], y=df["Matemática"], name="Matemática", marker_color=LILAS))
+        fig.update_layout(barmode="group")
+    return estilo_fig(fig, titulo, "Proficiência SAEB", 480)
 
-
-def fig_lp_mat_n(df, titulo):
+def grafico_lp_mat_n(df, titulo):
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=df["Ano"], y=df["Língua Portuguesa"], name="Língua Portuguesa"))
-    fig.add_trace(go.Bar(x=df["Ano"], y=df["Matemática"], name="Matemática"))
+    fig.add_trace(go.Bar(x=df["Ano"], y=df["Língua Portuguesa"], name="Língua Portuguesa", marker_color=ROSA))
+    fig.add_trace(go.Bar(x=df["Ano"], y=df["Matemática"], name="Matemática", marker_color=LILAS))
     fig.add_trace(go.Scatter(
         x=df["Ano"], y=df["N"], name="Nota Média Padronizada (N)",
-        mode="lines+markers", yaxis="y2"
+        mode="lines+markers+text", yaxis="y2",
+        text=[fmt(v,2) if pd.notna(v) else "" for v in df["N"]],
+        textposition="top center", line=dict(color=LARANJA, width=3), marker=dict(size=8)
     ))
+    estilo_fig(fig, titulo, "Proficiência SAEB", 505)
     fig.update_layout(
-        title=titulo, barmode="group", height=490,
-        xaxis=dict(tickmode="array", tickvals=ANOS),
-        yaxis=dict(title="Proficiência SAEB"),
-        yaxis2=dict(title="N", overlaying="y", side="right", showgrid=False),
-        hovermode="x unified", legend_title_text=""
+        barmode="group",
+        yaxis2=dict(title="Nota Média Padronizada (N)", overlaying="y", side="right", showgrid=False, rangemode="tozero")
     )
     return fig
 
-
-def fig_aprovacao_p(df, etapa, titulo):
-    series = SERIES_FI if etapa == "Fundamental I" else SERIES_FII
+def grafico_aprovacao_series_p(df, etapa, titulo):
     fig = go.Figure()
-    for serie in series:
-        if serie in df and df[serie].notna().any():
-            fig.add_trace(go.Bar(x=df["Ano"], y=df[serie], name=f"Aprovação {serie}"))
+    paleta = ["#3F7C91","#5A91A4","#76A6B7","#91BBC8","#ADCED6"]
+    for i, serie in enumerate(SERIES[etapa]):
+        if df[serie].notna().any():
+            fig.add_trace(go.Bar(x=df["Ano"], y=df[serie], name=serie, marker_color=paleta[i % len(paleta)]))
     fig.add_trace(go.Scatter(
         x=df["Ano"], y=df["P"], name="Indicador de Rendimento (P)",
-        mode="lines+markers", yaxis="y2"
+        mode="lines+markers+text", yaxis="y2",
+        text=[fmt(v,3) if pd.notna(v) else "" for v in df["P"]],
+        textposition="top center", line=dict(color=LILAS_P, width=3), marker=dict(size=8)
     ))
+    estilo_fig(fig, titulo, "Taxa de aprovação (%)", 520)
     fig.update_layout(
-        title=titulo, barmode="group", height=500,
-        xaxis=dict(tickmode="array", tickvals=ANOS),
-        yaxis=dict(title="Taxa de aprovação (%)", range=[0, 105]),
-        yaxis2=dict(title="P", overlaying="y", side="right", showgrid=False),
-        hovermode="x unified", legend_title_text=""
+        barmode="group",
+        yaxis=dict(title="Taxa de aprovação (%)", range=[0,105], gridcolor="#EDF1F4"),
+        yaxis2=dict(title="Indicador de Rendimento (P)", overlaying="y", side="right", showgrid=False)
     )
     return fig
 
-
-def fig_n_p_ideb(df, titulo):
+def grafico_aprovacao_linhas(df, etapa, titulo):
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=df["Ano"], y=df["N"], name="N"))
-    fig.add_trace(go.Scatter(x=df["Ano"], y=df["IDEB"], name="IDEB", mode="lines+markers"))
+    for serie in SERIES[etapa]:
+        if df[serie].notna().any():
+            fig.add_trace(go.Scatter(x=df["Ano"], y=df[serie], mode="lines+markers", name=serie))
+    if df["Aprovação Geral"].notna().any():
+        fig.add_trace(go.Scatter(
+            x=df["Ano"], y=df["Aprovação Geral"], mode="lines+markers", name="Aprovação geral",
+            line=dict(color="#17212b", width=3)
+        ))
+    return estilo_fig(fig, titulo, "Taxa de aprovação (%)", 500)
+
+def grafico_np_ideb(df, titulo):
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df["Ano"], y=df["N"], name="Nota Média Padronizada (N)", marker_color="#E5A8BA"))
     fig.add_trace(go.Scatter(
-        x=df["Ano"], y=df["P"], name="P", mode="lines+markers", yaxis="y2"
+        x=df["Ano"], y=df["IDEB"], name="IDEB", mode="lines+markers+text",
+        text=[fmt(v,1) if pd.notna(v) else "" for v in df["IDEB"]],
+        textposition="bottom center", line=dict(color=LARANJA, width=3), marker=dict(size=8)
     ))
-    fig.update_layout(
-        title=titulo, height=490,
-        xaxis=dict(tickmode="array", tickvals=ANOS),
-        yaxis=dict(title="N / IDEB", rangemode="tozero"),
-        yaxis2=dict(title="P", overlaying="y", side="right", showgrid=False),
-        hovermode="x unified", legend_title_text=""
-    )
+    fig.add_trace(go.Scatter(
+        x=df["Ano"], y=df["P"], name="Indicador de Rendimento (P)",
+        mode="lines+markers+text", yaxis="y2",
+        text=[fmt(v,3) if pd.notna(v) else "" for v in df["P"]],
+        textposition="top center", line=dict(color=LILAS_P, width=3), marker=dict(size=8)
+    ))
+    estilo_fig(fig, titulo, "N / IDEB", 510)
+    fig.update_layout(yaxis2=dict(title="Indicador de Rendimento (P)", overlaying="y", side="right", showgrid=False))
     return fig
 
+def grafico_comparacao_lp_mat(df1, nome1, df2, nome2, titulo):
+    fig = go.Figure()
+    traces = [
+        (df1, "Língua Portuguesa", f"{nome1} — LP", ROSA, "top center"),
+        (df1, "Matemática", f"{nome1} — Matemática", LILAS, "bottom center"),
+        (df2, "Língua Portuguesa", f"{nome2} — LP", AZUL_COMP, "top center"),
+        (df2, "Matemática", f"{nome2} — Matemática", VERDE_COMP, "bottom center"),
+    ]
+    for d, col, nome, cor, pos in traces:
+        fig.add_trace(go.Scatter(
+            x=d["Ano"], y=d[col], mode="lines+markers+text", name=nome,
+            text=[fmt(v,1) if pd.notna(v) else "" for v in d[col]],
+            textposition=pos, line=dict(color=cor, width=3), marker=dict(size=8)
+        ))
+    return estilo_fig(fig, titulo, "Proficiência SAEB", 540)
 
-def ultimo_valor(df, col):
-    x = df.dropna(subset=[col]).sort_values("Ano")
-    if x.empty:
-        return None, None
-    r = x.iloc[-1]
-    return r[col], int(r["Ano"])
+def grafico_comparacao_indicador(datasets, indicador, titulo):
+    fig = go.Figure()
+    cores = [AZUL, AZUL_COMP, VERDE_COMP, ROSA, LILAS, LARANJA]
+    for i, (nome, df) in enumerate(datasets):
+        fig.add_trace(go.Scatter(
+            x=df["Ano"], y=df[indicador], mode="lines+markers+text", name=nome,
+            text=[fmt(v,2 if indicador not in ["IDEB","Aprovação Geral"] else 1) if pd.notna(v) else "" for v in df[indicador]],
+            textposition="top center", line=dict(color=cores[i % len(cores)], width=3), marker=dict(size=8)
+        ))
+    return estilo_fig(fig, titulo, indicador, 515)
 
-
-# ============================================================
-# CABEÇALHO
-# ============================================================
-st.title("📊 Painel de Indicadores Educacionais")
-st.caption("SAEB • IDEB • Fluxo escolar • Comparações territoriais")
-
-with st.sidebar:
-    st.header("Painel")
-    pagina = st.radio(
-        "Navegação",
-        ["Visão da Rede", "Comparações", "Escolas", "Aprendizagem", "Território"],
-        label_visibility="collapsed"
-    )
-    st.divider()
-    st.caption(f"Série histórica disponível: {min(ANOS)}–{max(ANOS)}")
-
-
-# ============================================================
-# VISÃO DA REDE
-# ============================================================
-if pagina == "Visão da Rede":
-    st.subheader("Visão da Rede")
-
-    c1, c2, c3 = st.columns([1.4, 1, 1])
-    with c1:
-        etapa = st.selectbox("Etapa", ETAPAS, key="vr_etapa")
-    with c2:
-        ano = st.selectbox("Ano de referência", ANOS, index=len(ANOS)-1, key="vr_ano")
-    with c3:
-        rede = st.selectbox("Rede", redes_do_municipio("Barueri", etapa), key="vr_rede")
-
-    base = filtrar_municipio("Barueri", etapa, min(ANOS), max(ANOS), rede)
-    atual = base[base["Ano"].eq(ano)]
-
-    if atual.empty:
-        st.info("Não há dados para a combinação selecionada.")
-    else:
-        row = atual.iloc[-1]
-        cols = st.columns(5)
-        cards = [
-            ("IDEB", row.get("IDEB")),
-            ("Língua Portuguesa", row.get("Língua Portuguesa")),
-            ("Matemática", row.get("Matemática")),
-            ("Aprovação", row.get("Aprovação Geral")),
-            ("Rendimento (P)", row.get("P")),
-        ]
-        for col, (rot, val) in zip(cols, cards):
-            col.metric(rot, "—" if pd.isna(val) else f"{val:.2f}")
-
-        st.plotly_chart(
-            fig_linhas_comparacao([("Barueri", base)], "IDEB",
-                                  f"Série histórica do IDEB — {etapa}", "IDEB"),
-            use_container_width=True
+def cards_rede(row):
+    itens = [
+        ("IDEB", row.get("IDEB"), 1, ""),
+        ("Fluxo • Aprovação", row.get("Aprovação Geral"), 1, "%"),
+        ("Língua Portuguesa • SAEB", row.get("Língua Portuguesa"), 2, ""),
+        ("Matemática • SAEB", row.get("Matemática"), 2, ""),
+    ]
+    cols = st.columns(4)
+    for c, (label, val, casas, suf) in zip(cols, itens):
+        c.markdown(
+            f"""<div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{fmt(val,casas,suf)}</div>
+            <div class="metric-foot">valor disponível para o ano selecionado</div>
+            </div>""",
+            unsafe_allow_html=True
         )
 
-        a, b = st.columns(2)
-        with a:
-            st.plotly_chart(fig_lp_mat(base, f"Aprendizagem — {etapa}"), use_container_width=True)
-        with b:
-            st.plotly_chart(fig_aprovacao_p(base, etapa, f"Fluxo e rendimento — {etapa}"),
-                            use_container_width=True)
+st.markdown(
+    '<div class="brand"><div class="brand-icon">SAEB</div><div><div class="brand-title">'
+    'Painel Saeb • Rede Municipal de Ensino de Barueri</div><div class="brand-sub">'
+    'Série histórica 2005–2025 • IDEB • Saeb • Fluxo escolar</div></div></div>',
+    unsafe_allow_html=True
+)
 
+pagina = st.radio(
+    "Navegação principal",
+    ["Visão da rede","Escolas","Aprendizagem","Território"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="nav_principal"
+)
 
-# ============================================================
-# COMPARAÇÕES
-# ============================================================
-elif pagina == "Comparações":
+if pagina == "Visão da rede":
+    st.markdown('<div class="eyebrow">Visão da rede • Barueri municipal</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Rede Municipal de Ensino de Barueri — IDEB e Saeb, 2005–2025</div>', unsafe_allow_html=True)
 
-    @st.fragment
-    def area_comparacoes():
-        st.subheader("Comparações entre municípios")
-        st.caption("Barueri permanece como referência. Selecione outros municípios e aplique a comparação.")
+    etapa = st.segmented_control(
+        "Etapa", ETAPAS, default="Fundamental I",
+        selection_mode="single", label_visibility="collapsed"
+    ) or "Fundamental I"
 
-        with st.form("formulario_comparacao"):
-            f1, f2, f3 = st.columns(3)
-            with f1:
-                etapa = st.selectbox("Etapa", ETAPAS, key="cmp_etapa")
-            with f2:
-                ano_ini = st.selectbox("Ano inicial", ANOS, index=0, key="cmp_ini")
-            with f3:
-                finais = [a for a in ANOS if a > ano_ini]
-                ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="cmp_fim")
+    sub = st.tabs([
+        "Panorama","Trajetória e metas","IDEB, LP e Matemática",
+        "Fluxo e permanência","Movimento da rede","Transparência"
+    ])
 
-            opcoes = sorted(x for x in municipios["Município"].dropna().unique() if x != "Barueri")
-            outros = st.multiselect(
-                "Municípios para comparar com Barueri",
-                opcoes, max_selections=5,
-                placeholder="Selecione até 5 municípios"
-            )
-            indicador = st.selectbox("Indicador", INDICADORES)
-            aplicar = st.form_submit_button("Aplicar comparação", type="primary")
+    base = dados_municipio("Barueri", etapa)
+    anos_disp = sorted(int(a) for a in base["Ano"].dropna().unique())
 
-        datasets = []
-        bar = filtrar_municipio("Barueri", etapa, ano_ini, ano_fim)
-        datasets.append(("Barueri — Municipal", bar))
-
-        for nome in outros:
-            redes = redes_do_municipio(nome, etapa)
-            # Preferência pela rede municipal quando existir; caso contrário, usa Pública ou a primeira.
-            if "Municipal" in redes:
-                r = "Municipal"
-            elif "Pública" in redes:
-                r = "Pública"
-            elif redes:
-                r = redes[0]
-            else:
-                r = None
-            datasets.append((f"{nome}" + (f" — {r}" if r else ""), filtrar_municipio(nome, etapa, ano_ini, ano_fim, r)))
-
-        st.plotly_chart(
-            fig_linhas_comparacao(
-                datasets, indicador,
-                f"{indicador}: Barueri × municípios — {etapa}",
-                indicador
-            ),
-            use_container_width=True
-        )
-
-        st.divider()
-        st.markdown("### Modelos de comparação recuperados do Colab")
-
-        somente_bar = bar
-        if not somente_bar.empty:
-            t1, t2 = st.tabs(["LP × Matemática × N", "Aprovação por série × P"])
-            with t1:
-                st.plotly_chart(
-                    fig_lp_mat_n(somente_bar, f"Barueri — {etapa}: LP + Matemática × N"),
-                    use_container_width=True
+    with sub[0]:
+        ano = st.selectbox("Ano de referência", anos_disp, index=len(anos_disp)-1, key="pan_ano")
+        row = ultima_linha(base, ano)
+        if row is not None:
+            st.markdown('<div class="section-title">Síntese da rede</div>', unsafe_allow_html=True)
+            cards_rede(row)
+            if pd.notna(row.get("Meta IDEB")):
+                st.markdown(
+                    f'<div class="info"><b>Meta IDEB:</b> {fmt(row.get("Meta IDEB"),1)} &nbsp; • &nbsp; '
+                    f'<b>Situação:</b> {row.get("Situação Meta","—")} &nbsp; • &nbsp; '
+                    f'<b>Diferença:</b> {fmt(row.get("Diferença para Meta"),1)}</div>',
+                    unsafe_allow_html=True
                 )
-            with t2:
-                st.plotly_chart(
-                    fig_aprovacao_p(somente_bar, etapa, f"Barueri — {etapa}: aprovação por série × P"),
-                    use_container_width=True
-                )
+            st.plotly_chart(grafico_ideb_meta(base, f"Série histórica do IDEB — {etapa}"), use_container_width=True)
 
-        st.markdown("### N × P × IDEB")
-        st.plotly_chart(
-            fig_n_p_ideb(somente_bar, f"Barueri — {etapa}: componentes do IDEB"),
-            use_container_width=True
-        )
-
-    area_comparacoes()
-
-
-# ============================================================
-# ESCOLAS
-# ============================================================
-elif pagina == "Escolas":
-
-    @st.fragment
-    def area_escolas():
-        st.subheader("Consulta por unidade escolar")
-
-        with st.form("form_escolas"):
-            etapa = st.selectbox("Etapa", ETAPAS, key="esc_etapa")
-            nomes = sorted(escolas.loc[escolas["Etapa"].eq(etapa), "Escola"].dropna().unique())
-            escola = st.selectbox("Escola", nomes)
-            ano_ini, ano_fim = st.select_slider(
-                "Período", options=ANOS, value=(min(ANOS), max(ANOS))
-            )
-            st.form_submit_button("Aplicar", type="primary")
-
-        df = escolas[
-            escolas["Escola"].eq(escola)
-            & escolas["Etapa"].eq(etapa)
-            & escolas["Ano"].between(ano_ini, ano_fim)
-        ].sort_values("Ano")
-
-        v_ideb, a_ideb = ultimo_valor(df, "IDEB")
-        v_lp, a_lp = ultimo_valor(df, "Língua Portuguesa")
-        v_mat, a_mat = ultimo_valor(df, "Matemática")
-        m1, m2, m3 = st.columns(3)
-        m1.metric(f"IDEB ({a_ideb or '—'})", "—" if v_ideb is None else f"{v_ideb:.2f}")
-        m2.metric(f"LP ({a_lp or '—'})", "—" if v_lp is None else f"{v_lp:.2f}")
-        m3.metric(f"Matemática ({a_mat or '—'})", "—" if v_mat is None else f"{v_mat:.2f}")
-
-        st.plotly_chart(fig_lp_mat(df, f"{escola} — LP × Matemática"), use_container_width=True)
-
-        a, b = st.columns(2)
-        with a:
-            st.plotly_chart(fig_aprovacao_p(df, etapa, "Aprovação por série × P"), use_container_width=True)
-        with b:
-            st.plotly_chart(fig_n_p_ideb(df, "N × P × IDEB"), use_container_width=True)
-
-        st.markdown("### Comparar duas escolas")
-        nomes2 = sorted(escolas.loc[escolas["Etapa"].eq(etapa), "Escola"].dropna().unique())
+    with sub[1]:
         c1, c2 = st.columns(2)
-        e1 = c1.selectbox("Escola 1", nomes2, index=0, key="e1")
-        e2 = c2.selectbox("Escola 2", nomes2, index=min(1, len(nomes2)-1), key="e2")
-        d1 = escolas[(escolas["Escola"].eq(e1)) & (escolas["Etapa"].eq(etapa)) & escolas["Ano"].between(ano_ini, ano_fim)]
-        d2 = escolas[(escolas["Escola"].eq(e2)) & (escolas["Etapa"].eq(etapa)) & escolas["Ano"].between(ano_ini, ano_fim)]
-        ind = st.selectbox("Indicador da comparação", INDICADORES, key="ind_esc")
+        with c1:
+            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="traj_ini")
+        finais = [a for a in anos_disp if a >= ano_ini]
+        with c2:
+            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="traj_fim")
+        d = base[base["Ano"].between(ano_ini, ano_fim)]
+        st.plotly_chart(grafico_ideb_meta(d, f"IDEB e metas — {ano_ini}–{ano_fim}"), use_container_width=True)
+
+    with sub[2]:
+        c1, c2 = st.columns(2)
+        with c1:
+            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="lp_ini")
+        finais = [a for a in anos_disp if a >= ano_ini]
+        with c2:
+            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="lp_fim")
+        d = base[base["Ano"].between(ano_ini, ano_fim)]
+        row = ultima_linha(d)
+        if row is not None:
+            cards_rede(row)
+        st.plotly_chart(grafico_lp_mat(d, f"Língua Portuguesa × Matemática — {etapa}"), use_container_width=True)
+        st.plotly_chart(grafico_lp_mat_n(d, f"LP + Matemática × Nota Média Padronizada (N) — {etapa}"), use_container_width=True)
+        st.plotly_chart(grafico_np_ideb(d, f"N × P × IDEB — {etapa}"), use_container_width=True)
+
+    with sub[3]:
+        c1, c2 = st.columns(2)
+        with c1:
+            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="fl_ini")
+        finais = [a for a in anos_disp if a >= ano_ini]
+        with c2:
+            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="fl_fim")
+        d = base[base["Ano"].between(ano_ini, ano_fim)]
+        st.plotly_chart(grafico_aprovacao_linhas(d, etapa, f"Taxa de aprovação por série — {etapa}"), use_container_width=True)
+        st.plotly_chart(grafico_aprovacao_series_p(d, etapa, f"Aprovação por série × Indicador de Rendimento (P) — {etapa}"), use_container_width=True)
+
+    with sub[4]:
+        st.markdown('<div class="section-title">Movimento da rede</div>', unsafe_allow_html=True)
+        st.markdown('<div class="note">A base atual não contém diretamente as variáveis de estabilidade/movimento das unidades mostradas no modelo visual. Esta área ficou reservada para essa incorporação.</div>', unsafe_allow_html=True)
+
+    with sub[5]:
+        st.dataframe(
+            base[["Ano","Rede","Etapa","IDEB","Meta IDEB","Matemática","Língua Portuguesa","N","P","Aprovação Geral"]],
+            hide_index=True, use_container_width=True
+        )
+        inv = investimento[investimento["Etapa"] == etapa].sort_values("Ano")
+        if not inv.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=inv["Ano"], y=inv["Investimento por Estudante"],
+                mode="lines+markers", name="Investimento por estudante",
+                line=dict(color=AZUL, width=3)
+            ))
+            estilo_fig(fig, f"Investimento por estudante — referência INEP ({etapa})", "R$ por estudante", 430)
+            st.plotly_chart(fig, use_container_width=True)
+
+elif pagina == "Escolas":
+    st.markdown('<div class="eyebrow">Escolas</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Painel de consulta às unidades escolares</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Filtre a unidade, escolha a etapa e analise sua trajetória ou compare duas escolas no mesmo gráfico.</div>', unsafe_allow_html=True)
+
+    @st.fragment
+    def painel_escolas():
+        with st.form("form_escola"):
+            c1, c2 = st.columns([1,3])
+            with c1:
+                etapa = st.selectbox("Etapa", ETAPAS)
+            lista = sorted(escolas.loc[escolas["Etapa"] == etapa, "Escola"].dropna().unique())
+            with c2:
+                escola = st.selectbox("Escola", lista)
+            st.form_submit_button("Aplicar filtros", type="primary")
+
+        anos_e = sorted(int(a) for a in escolas.loc[
+            (escolas["Etapa"] == etapa) & (escolas["Escola"] == escola), "Ano"
+        ].dropna().unique())
+        intervalo = st.select_slider("Período", options=anos_e, value=(anos_e[0], anos_e[-1]))
+        d = dados_escola(escola, etapa, intervalo[0], intervalo[1])
+
+        row = ultima_linha(d)
+        if row is not None:
+            cols = st.columns(4)
+            for c, (rot, val, casas) in zip(cols, [
+                ("IDEB",row.get("IDEB"),1),
+                ("Língua Portuguesa",row.get("Língua Portuguesa"),2),
+                ("Matemática",row.get("Matemática"),2),
+                ("Aprovação",row.get("Aprovação Geral"),1)
+            ]):
+                c.markdown(
+                    f'<div class="metric-card"><div class="metric-label">{rot}</div>'
+                    f'<div class="metric-value">{fmt(val,casas,"%" if rot=="Aprovação" else "")}</div>'
+                    f'<div class="metric-foot">último valor disponível</div></div>',
+                    unsafe_allow_html=True
+                )
+
+        t1,t2,t3 = st.tabs(["Desempenho","Fluxo e rendimento","Comparar escolas"])
+        with t1:
+            st.plotly_chart(grafico_ideb_meta(d, f"IDEB e metas — {escola}"), use_container_width=True)
+            st.plotly_chart(grafico_lp_mat(d, f"LP × Matemática — {escola}"), use_container_width=True)
+            st.plotly_chart(grafico_lp_mat_n(d, f"LP + Matemática × N — {escola}"), use_container_width=True)
+        with t2:
+            st.plotly_chart(grafico_aprovacao_linhas(d, etapa, f"Aprovação por série — {escola}"), use_container_width=True)
+            st.plotly_chart(grafico_aprovacao_series_p(d, etapa, f"Aprovação por série × P — {escola}"), use_container_width=True)
+        with t3:
+            with st.form("form_comp_escolas"):
+                c1,c2,c3 = st.columns([2,2,1])
+                with c1:
+                    e1 = st.selectbox("Escola 1", lista, index=0)
+                with c2:
+                    e2 = st.selectbox("Escola 2", lista, index=min(1,len(lista)-1))
+                with c3:
+                    indicador = st.selectbox("Indicador", ["IDEB","Língua Portuguesa","Matemática","N","P","Aprovação Geral"])
+                st.form_submit_button("Comparar", type="primary")
+            d1 = dados_escola(e1, etapa, intervalo[0], intervalo[1])
+            d2 = dados_escola(e2, etapa, intervalo[0], intervalo[1])
+            if indicador in ["Língua Portuguesa","Matemática"]:
+                st.plotly_chart(
+                    grafico_comparacao_lp_mat(d1,e1,d2,e2,f"LP e Matemática — {e1} × {e2}"),
+                    use_container_width=True
+                )
+            else:
+                st.plotly_chart(
+                    grafico_comparacao_indicador([(e1,d1),(e2,d2)], indicador, f"{indicador} — comparação entre escolas"),
+                    use_container_width=True
+                )
+
+    painel_escolas()
+
+elif pagina == "Aprendizagem":
+    st.markdown('<div class="eyebrow">Aprendizagem</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Diagnóstico de Língua Portuguesa e Matemática</div>', unsafe_allow_html=True)
+
+    modo = st.radio("Visão", ["Por rede","Por escola"], horizontal=True, label_visibility="collapsed")
+    etapa = st.segmented_control("Etapa", ETAPAS, default="Fundamental I", selection_mode="single") or "Fundamental I"
+
+    if modo == "Por rede":
+        base = dados_municipio("Barueri", etapa)
+        anos_disp = sorted(int(a) for a in base["Ano"].dropna().unique())
+        ano = st.selectbox("Ano de referência", anos_disp, index=len(anos_disp)-1)
+        row = ultima_linha(base, ano)
+        if row is not None:
+            cards_rede(row)
+            c1,c2 = st.columns(2)
+            c1.markdown(
+                f'<div class="metric-card"><div class="metric-label">Língua Portuguesa</div>'
+                f'<div class="metric-value">Nível {fmt(row.get("Nível Língua Portuguesa"),0)}</div>'
+                f'<div class="metric-foot">{row.get("Padrão Língua Portuguesa","—")}</div></div>',
+                unsafe_allow_html=True
+            )
+            c2.markdown(
+                f'<div class="metric-card"><div class="metric-label">Matemática</div>'
+                f'<div class="metric-value">Nível {fmt(row.get("Nível Matemática"),0)}</div>'
+                f'<div class="metric-foot">{row.get("Padrão Matemática","—")}</div></div>',
+                unsafe_allow_html=True
+            )
+        st.plotly_chart(grafico_lp_mat(base, f"Série histórica das proficiências — {etapa}"), use_container_width=True)
+    else:
+        lista = sorted(escolas.loc[escolas["Etapa"] == etapa, "Escola"].dropna().unique())
+        escola = st.selectbox("Selecione uma escola", lista)
+        d = dados_escola(escola, etapa)
+        st.plotly_chart(grafico_lp_mat(d, f"Série histórica das proficiências — {escola}"), use_container_width=True)
+
+elif pagina == "Território":
+    st.markdown('<div class="eyebrow">Território</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Barueri no contexto regional e estadual</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Comparação livre entre municípios, preservando Barueri como referência e usando a série completa disponível.</div>', unsafe_allow_html=True)
+
+    @st.fragment
+    def painel_territorio():
+        etapa = st.segmented_control(
+            "Etapa", ETAPAS, default="Fundamental I",
+            selection_mode="single", key="ter_etapa"
+        ) or "Fundamental I"
+
+        base_bar = dados_municipio("Barueri", etapa)
+        anos_disp = sorted(int(a) for a in base_bar["Ano"].dropna().unique())
+
+        with st.form("form_comparacao_municipio"):
+            c1,c2,c3 = st.columns([1,1,2])
+            with c1:
+                ano_ini = st.selectbox("Ano inicial", anos_disp, index=0)
+            finais = [a for a in anos_disp if a >= ano_ini]
+            with c2:
+                ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1)
+            lista = sorted(x for x in municipios["Município"].dropna().unique() if x != "Barueri")
+            with c3:
+                outros = st.multiselect(
+                    "Comparar Barueri com", lista, max_selections=5,
+                    placeholder="Selecione até 5 municípios"
+                )
+            st.form_submit_button("Aplicar comparação", type="primary")
+
+        bar = dados_municipio("Barueri", etapa, ano_ini, ano_fim)
+
+        st.markdown('<div class="section-title">Modelo comparativo do Colab — LP e Matemática</div>', unsafe_allow_html=True)
+        if outros:
+            comp = outros[0]
+            dc = dados_municipio(comp, etapa, ano_ini, ano_fim)
+            st.plotly_chart(
+                grafico_comparacao_lp_mat(
+                    bar, "Barueri", dc, comp,
+                    f"LP e Matemática — Barueri × {comp} — {etapa}"
+                ),
+                use_container_width=True
+            )
+        else:
+            st.markdown(
+                '<div class="info">Barueri permanece visível mesmo sem outro município selecionado. '
+                'Escolha um município para ativar a comparação no mesmo gráfico.</div>',
+                unsafe_allow_html=True
+            )
+            st.plotly_chart(grafico_lp_mat(bar, f"LP e Matemática — Barueri — {etapa}"), use_container_width=True)
+
+        st.markdown('<div class="section-title">Comparações por indicador</div>', unsafe_allow_html=True)
+        indicador = st.selectbox(
+            "Indicador", ["IDEB","N","P","Aprovação Geral","Língua Portuguesa","Matemática"],
+            key="ter_ind"
+        )
+        datasets = [("Barueri",bar)]
+        for nome in outros:
+            datasets.append((nome, dados_municipio(nome, etapa, ano_ini, ano_fim)))
         st.plotly_chart(
-            fig_linhas_comparacao([(e1, d1), (e2, d2)], ind, f"{ind}: comparação entre escolas"),
+            grafico_comparacao_indicador(datasets, indicador, f"{indicador} — Barueri e municípios selecionados"),
             use_container_width=True
         )
 
-    area_escolas()
-
-
-# ============================================================
-# APRENDIZAGEM
-# ============================================================
-elif pagina == "Aprendizagem":
-    st.subheader("Aprendizagem")
-    etapa = st.selectbox("Etapa", ETAPAS, key="apr_etapa")
-    ano = st.selectbox("Ano", ANOS, index=len(ANOS)-1, key="apr_ano")
-
-    base = municipios[(municipios["Etapa"].eq(etapa)) & (municipios["Ano"].eq(ano))].copy()
-    # Uma linha representativa por município, priorizando Municipal.
-    base["_prio"] = base["Rede"].map({"Municipal": 0, "Pública": 1, "Estadual": 2, "Federal": 3}).fillna(9)
-    base = base.sort_values(["Município", "_prio"]).drop_duplicates("Município")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        top = base.nlargest(20, "Língua Portuguesa")
-        fig = px.bar(top.sort_values("Língua Portuguesa"), x="Língua Portuguesa", y="Município",
-                     orientation="h", title=f"20 maiores resultados — Língua Portuguesa ({ano})")
-        st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        top = base.nlargest(20, "Matemática")
-        fig = px.bar(top.sort_values("Matemática"), x="Matemática", y="Município",
-                     orientation="h", title=f"20 maiores resultados — Matemática ({ano})")
-        st.plotly_chart(fig, use_container_width=True)
-
-
-# ============================================================
-# TERRITÓRIO
-# ============================================================
-elif pagina == "Território":
-
-    @st.fragment
-    def area_territorio():
-        st.subheader("Comparação territorial")
-        st.caption("Compare Barueri com outros municípios usando os indicadores disponíveis na base completa.")
-
-        with st.form("form_territorio"):
-            etapa = st.selectbox("Etapa", ETAPAS, key="ter_etapa")
-            ano = st.selectbox("Ano", ANOS, index=len(ANOS)-1, key="ter_ano")
-            opcoes = sorted(x for x in municipios["Município"].dropna().unique() if x != "Barueri")
-            comps = st.multiselect("Municípios", opcoes, max_selections=5)
-            st.form_submit_button("Atualizar território", type="primary")
-
-        nomes = ["Barueri"] + comps
-        linhas = []
+        st.markdown('<div class="section-title">N × P × IDEB</div>', unsafe_allow_html=True)
+        ano_ref = st.selectbox("Ano para comparação transversal", finais, index=len(finais)-1, key="np_ano")
+        nomes = ["Barueri"] + outros
+        rows = []
         for nome in nomes:
-            redes = redes_do_municipio(nome, etapa)
-            rede = "Municipal" if "Municipal" in redes else ("Pública" if "Pública" in redes else (redes[0] if redes else None))
-            x = filtrar_municipio(nome, etapa, ano, ano, rede)
-            if not x.empty:
-                r = x.iloc[-1].copy()
-                r["Município Exibido"] = nome
-                linhas.append(r)
-
-        if linhas:
-            comp = pd.DataFrame(linhas)
+            d = dados_municipio(nome, etapa, ano_ref, ano_ref)
+            if not d.empty:
+                r = d.iloc[-1]
+                rows.append({"Município":nome, "N":r.get("N"), "P":r.get("P"), "IDEB":r.get("IDEB")})
+        trans = pd.DataFrame(rows)
+        if not trans.empty:
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=comp["Município Exibido"], y=comp["IDEB"], name="IDEB"))
+            fig.add_trace(go.Bar(x=trans["Município"], y=trans["N"], name="N", marker_color="#E5A8BA"))
             fig.add_trace(go.Scatter(
-                x=comp["Município Exibido"], y=comp["Aprovação Geral"],
-                name="Aprovação Geral", mode="lines+markers", yaxis="y2"
+                x=trans["Município"], y=trans["IDEB"], name="IDEB",
+                mode="lines+markers+text",
+                text=[fmt(v,1) for v in trans["IDEB"]],
+                textposition="bottom center", line=dict(color=LARANJA,width=3)
             ))
-            fig.update_layout(
-                title=f"IDEB × Aprovação Geral — {etapa}, {ano}",
-                height=480,
-                yaxis=dict(title="IDEB"),
-                yaxis2=dict(title="Aprovação (%)", overlaying="y", side="right", range=[0,105]),
-                legend_title_text=""
-            )
+            fig.add_trace(go.Scatter(
+                x=trans["Município"], y=trans["P"], name="P",
+                mode="lines+markers+text", yaxis="y2",
+                text=[fmt(v,3) for v in trans["P"]],
+                textposition="top center", line=dict(color=LILAS_P,width=3)
+            ))
+            estilo_fig(fig, f"N × P × IDEB — {ano_ref} — {etapa}", "N / IDEB", 520)
+            fig.update_layout(yaxis2=dict(title="P", overlaying="y", side="right", showgrid=False))
             st.plotly_chart(fig, use_container_width=True)
 
-            st.dataframe(
-                comp[["Município Exibido", "Rede", "IDEB", "Matemática", "Língua Portuguesa", "N", "P", "Aprovação Geral"]],
-                use_container_width=True, hide_index=True
-            )
+    painel_territorio()
 
-        st.markdown("### Investimento por estudante — referência INEP")
-        inv = investimento[investimento["Etapa"].eq(etapa)].sort_values("Ano")
-        if not inv.empty:
-            fig = px.line(inv, x="Ano", y="Investimento por Estudante", markers=True,
-                          title=f"Investimento por estudante — {etapa}")
-            st.plotly_chart(fig, use_container_width=True)
-
-    area_territorio()
+st.markdown(
+    '<div class="footer">Painel educacional • dados organizados a partir das bases SAEB/IDEB fornecidas para o projeto.</div>',
+    unsafe_allow_html=True
+)
