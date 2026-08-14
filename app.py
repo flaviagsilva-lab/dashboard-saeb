@@ -1208,6 +1208,211 @@ def tabela_ranking_exibicao(comp, entidade):
 
     return out
 
+
+def media_rede_recorte(etapa, ano, indicador, rede):
+    """
+    Média simples dos municípios com resultado publicado na combinação
+    etapa + ano + indicador + rede. É um recorte analítico do painel,
+    não uma média oficial ponderada por matrícula.
+    """
+    x = municipios[
+        (municipios["Etapa"] == etapa) &
+        (municipios["Ano"] == ano) &
+        (municipios["Rede"] == rede)
+    ].copy()
+
+    x[indicador] = pd.to_numeric(x[indicador], errors="coerce")
+    x = x.dropna(subset=[indicador])
+
+    # Um valor por município dentro da mesma rede.
+    x = (
+        x.sort_values(["Município", indicador], ascending=[True, False])
+        .drop_duplicates("Município", keep="first")
+    )
+
+    if x.empty:
+        return np.nan, 0
+
+    return float(x[indicador].mean()), int(x["Município"].nunique())
+
+def historico_rede_barueri(etapa):
+    x = dados_municipio("Barueri", etapa, rede="Municipal").copy()
+    cols = ["Ano","IDEB","Aprovação Geral","Língua Portuguesa","Matemática","Meta IDEB"]
+    return x[[c for c in cols if c in x.columns]].sort_values("Ano")
+
+def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
+    """
+    Escala visual simples por níveis, com marcador do resultado atual.
+    """
+    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
+    valor = row.get(coluna)
+    nivel = row.get(coluna_nivel)
+
+    faixas = FAIXAS_NIVEIS[etapa]
+    niveis = [n for n, _ in faixas]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[1]*len(niveis),
+        y=["Escala"]*len(niveis),
+        orientation="h",
+        marker_color=[cores_niveis(etapa).get(n, "#BDBDBD") for n in niveis],
+        text=[str(n) for n in niveis],
+        textposition="inside",
+        insidetextanchor="middle",
+        hoverinfo="skip",
+        showlegend=False
+    ))
+
+    fig.update_layout(
+        barmode="stack",
+        height=170,
+        margin=dict(l=20,r=20,t=35,b=25),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        title=dict(
+            text=f"{disciplina} — {etapa}",
+            x=.01, xanchor="left", font=dict(size=16)
+        )
+    )
+
+    if pd.notna(valor) and pd.notna(nivel):
+        n = int(float(nivel))
+        maxn = max(niveis) if niveis else 1
+        xpos = (n + .5) / (maxn + 1)
+        fig.add_annotation(
+            x=xpos, y=.15, xref="paper", yref="paper",
+            text=f"<b>{fmt(valor,2)}</b><br>Nível {n}",
+            showarrow=True, arrowhead=2, ax=0, ay=45,
+            bgcolor="#0E5A70", font=dict(color="white", size=11),
+            bordercolor="#0E5A70"
+        )
+
+    return fig
+
+def resultado_evolucao_barueri(etapa, disciplina, anos=(2019, 2023, 2025)):
+    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
+    base = dados_municipio("Barueri", etapa, rede="Municipal")
+    out = []
+    for ano in anos:
+        r = ultima_linha(base, ano)
+        if r is not None and pd.notna(r.get(coluna)):
+            out.append({
+                "Ano": ano,
+                "Valor": float(r.get(coluna)),
+                "Nível": r.get(coluna_nivel)
+            })
+    return pd.DataFrame(out)
+
+def fig_matriz_nivel_tendencia(df, entidade, disciplina, ano_ini, ano_fim, etapa):
+    chave = "Município" if entidade == "Município" else "Escola"
+    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
+
+    if entidade == "Município":
+        ini = ranking_municipios_ano(etapa, ano_ini, disciplina, "Municipal")
+        fim = ranking_municipios_ano(etapa, ano_fim, disciplina, "Municipal")
+    else:
+        ini = ranking_escolas_ano(etapa, ano_ini, disciplina)
+        fim = ranking_escolas_ano(etapa, ano_fim, disciplina)
+
+    ini = ini[[chave, coluna]].rename(columns={coluna:"Valor Inicial"})
+    fim = fim[[chave, coluna, coluna_nivel]].rename(
+        columns={coluna:"Valor Atual", coluna_nivel:"Nível Atual"}
+    )
+    comp = fim.merge(ini, on=chave, how="left")
+    comp["Variação"] = comp["Valor Atual"] - comp["Valor Inicial"]
+
+    def classe(v):
+        if pd.isna(v):
+            return "Sem comparação"
+        if v > 0.5:
+            return "Avanço"
+        if v < -0.5:
+            return "Recuo"
+        return "Estabilidade"
+
+    comp["Tendência"] = comp["Variação"].apply(classe)
+    mapa_cores = {
+        "Avanço":"#2E8B57",
+        "Estabilidade":"#7A8490",
+        "Recuo":"#C44747",
+        "Sem comparação":"#B8C0C8",
+    }
+
+    fig = go.Figure()
+    for cat in ["Avanço","Estabilidade","Recuo","Sem comparação"]:
+        s = comp[comp["Tendência"] == cat]
+        if s.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=s["Valor Atual"],
+            y=s["Variação"],
+            mode="markers",
+            name=cat,
+            marker=dict(size=9, color=mapa_cores[cat]),
+            text=s[chave],
+            customdata=np.column_stack([
+                s["Nível Atual"].fillna(np.nan),
+                s["Valor Inicial"].fillna(np.nan),
+                s["Valor Atual"].fillna(np.nan)
+            ]),
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                f"{disciplina} {ano_ini}: %{{customdata[1]:.2f}}<br>"
+                f"{disciplina} {ano_fim}: %{{customdata[2]:.2f}}<br>"
+                "Variação: %{y:.2f}<br>"
+                "Nível atual: %{customdata[0]}"
+                "<extra></extra>"
+            )
+        ))
+
+    fig.add_hline(y=0, line_dash="dash", line_color="#8A94A0")
+    mediana = comp["Valor Atual"].median()
+    if pd.notna(mediana):
+        fig.add_vline(x=mediana, line_dash="dash", line_color="#7FA1B0")
+
+    fig.update_layout(
+        title=dict(
+            text=f"Matriz nível × tendência — {disciplina} — {etapa}",
+            x=.01, xanchor="left", font=dict(size=18)
+        ),
+        height=520,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=55,r=30,t=70,b=50),
+        xaxis_title=f"{disciplina} {ano_fim} (resultado atual)",
+        yaxis_title=f"Variação {ano_ini} → {ano_fim}",
+        legend=dict(orientation="h", y=1.08, x=0),
+    )
+    fig.update_xaxes(gridcolor="#EDF1F4")
+    fig.update_yaxes(gridcolor="#EDF1F4")
+    return fig, comp
+
+def cards_movimento(comp):
+    total = len(comp)
+    avanc = int((comp["Tendência"] == "Avanço").sum())
+    est = int((comp["Tendência"] == "Estabilidade").sum())
+    rec = int((comp["Tendência"] == "Recuo").sum())
+    sem = int((comp["Tendência"] == "Sem comparação").sum())
+
+    cols = st.columns(4)
+    dados = [
+        ("↑ Avanço", avanc, "#D9F1E2"),
+        ("— Estabilidade", est, "#E7ECF2"),
+        ("↓ Recuo", rec, "#F7D8D5"),
+        ("Sem comparação", sem, "#E4EDF2"),
+    ]
+    for col, (rot, val, cor) in zip(cols, dados):
+        col.markdown(
+            f'<div class="metric-card" style="background:{cor};">'
+            f'<div class="metric-label">{rot}</div>'
+            f'<div class="metric-value">{val}</div>'
+            f'<div class="metric-foot">de {total} unidades consideradas</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 def cards_rede(row):
     itens = [
         ("IDEB", row.get("IDEB"), 1, ""),
@@ -1264,20 +1469,89 @@ if pagina == "Visão da rede":
     anos_disp = sorted(int(a) for a in base["Ano"].dropna().unique())
 
     with sub[0]:
-        ano = st.selectbox("Ano de referência", anos_disp, index=len(anos_disp)-1, key="pan_ano")
+        ano = st.selectbox(
+            "Ano de referência",
+            anos_disp,
+            index=len(anos_disp)-1,
+            key="pan_ano"
+        )
         row = ultima_linha(base, ano)
+
         if row is not None:
             st.markdown('<div class="section-title">Síntese da rede</div>', unsafe_allow_html=True)
             cards_rede(row)
-            if pd.notna(row.get("Meta IDEB")):
-                st.markdown(
-                    f'<div class="info"><b>Meta IDEB:</b> {fmt(row.get("Meta IDEB"),1)} &nbsp; • &nbsp; '
-                    f'<b>Situação:</b> {row.get("Situação Meta","—")} &nbsp; • &nbsp; '
-                    f'<b>Diferença:</b> {fmt(row.get("Diferença para Meta"),1)}</div>',
-                    unsafe_allow_html=True
-                )
-            st.plotly_chart(grafico_ideb_meta(base, f"Série histórica do IDEB — {etapa}"), use_container_width=True)
 
+            # metas
+            c1,c2,c3 = st.columns(3)
+            meta_2021 = base.loc[base["Ano"] == 2021, "Meta IDEB"].dropna()
+            ideb_2021 = base.loc[base["Ano"] == 2021, "IDEB"].dropna()
+
+            c1.markdown(
+                f'<div class="metric-card"><div class="metric-label">Meta oficial de 2021</div>'
+                f'<div class="metric-value">{fmt(meta_2021.iloc[-1],1) if not meta_2021.empty else "—"}</div>'
+                f'<div class="metric-foot">Última meta oficial projetada disponível na base.</div></div>',
+                unsafe_allow_html=True
+            )
+            c2.markdown(
+                f'<div class="metric-card"><div class="metric-label">Resultado observado em 2021</div>'
+                f'<div class="metric-value">{fmt(ideb_2021.iloc[-1],1) if not ideb_2021.empty else "—"}</div>'
+                f'<div class="metric-foot">Comparação com a meta oficial de referência.</div></div>',
+                unsafe_allow_html=True
+            )
+            c3.markdown(
+                '<div class="metric-card"><div class="metric-label">Meta para 2023 e 2025</div>'
+                '<div class="metric-value">—</div>'
+                '<div class="metric-foot">Sem meta projetada disponível na base para essas edições.</div></div>',
+                unsafe_allow_html=True
+            )
+
+            # comparação rápida Barueri x recortes
+            st.markdown('<div class="section-title">Comparação rápida</div>', unsafe_allow_html=True)
+            rede_ref = "Municipal"
+            brasil_media, n_brasil = media_rede_recorte(etapa, ano, "IDEB", rede_ref)
+            bar_val = row.get("IDEB")
+            diferenca = (
+                float(bar_val) - brasil_media
+                if pd.notna(bar_val) and pd.notna(brasil_media)
+                else np.nan
+            )
+
+            c1,c2 = st.columns([1,1])
+            c1.metric("Barueri — Municipal", "—" if pd.isna(bar_val) else fmt(bar_val,1))
+            c2.metric(
+                f"Média simples dos municípios — Rede {rede_ref}",
+                "—" if pd.isna(brasil_media) else fmt(brasil_media,1),
+                delta=None if pd.isna(diferenca) else f"{diferenca:+.1f}".replace(".", ",")
+            )
+
+            st.markdown(
+                f'<div class="info">O recorte de referência é calculado como média simples dos '
+                f'{n_brasil} municípios com resultado publicado em {ano}, sempre na mesma etapa, '
+                f'indicador e tipo de rede de Barueri. Não é média oficial ponderada por matrícula.</div>',
+                unsafe_allow_html=True
+            )
+
+            # tabela histórica
+            st.markdown('<div class="section-title">IDEB e aprovação, ano a ano</div>', unsafe_allow_html=True)
+            hist = historico_rede_barueri(etapa).copy()
+            hist = hist.rename(columns={
+                "Aprovação Geral":"Aprovação (%)",
+                "Língua Portuguesa":"Língua Portuguesa",
+                "Matemática":"Matemática"
+            })
+            st.dataframe(
+                hist[["Ano","IDEB","Aprovação (%)","Língua Portuguesa","Matemática"]],
+                hide_index=True,
+                use_container_width=True
+            )
+
+            # escala rápida
+            st.markdown('<div class="section-title">Posição da média da rede na escala do Saeb</div>', unsafe_allow_html=True)
+            c1,c2 = st.columns(2)
+            with c1:
+                st.plotly_chart(fig_escala_saeb(row, etapa, "Língua Portuguesa"), use_container_width=True)
+            with c2:
+                st.plotly_chart(fig_escala_saeb(row, etapa, "Matemática"), use_container_width=True)
     with sub[1]:
         c1, c2 = st.columns(2)
         with c1:
@@ -1666,53 +1940,60 @@ elif pagina == "Aprendizagem":
             ) or "Fundamental I"
 
             if modo == "Por rede":
-                base = dados_municipio("Barueri", etapa)
-                anos_disp = sorted(
-                    int(a) for a in base["Ano"].dropna().unique()
-                )
-
+                base = dados_municipio("Barueri", etapa, rede="Municipal")
+                anos_disp = sorted(int(a) for a in base["Ano"].dropna().unique())
                 ano = st.selectbox(
                     "Ano de referência",
                     anos_disp,
                     index=len(anos_disp)-1,
                     key="apr_ano_rede"
                 )
-
                 row = ultima_linha(base, ano)
 
                 if row is not None:
                     cards_rede(row)
 
-                    st.markdown(
-                        '<div class="section-title">Níveis atuais de proficiência</div>',
-                        unsafe_allow_html=True
-                    )
+                    d_lp = resultado_evolucao_barueri(etapa, "Língua Portuguesa")
+                    d_mat = resultado_evolucao_barueri(etapa, "Matemática")
 
                     c1,c2 = st.columns(2)
+                    with c1:
+                        st.plotly_chart(fig_escala_saeb(row, etapa, "Língua Portuguesa"), use_container_width=True)
+                    with c2:
+                        st.plotly_chart(fig_escala_saeb(row, etapa, "Matemática"), use_container_width=True)
+
+                    st.markdown('<div class="section-title">O que este resultado indica?</div>', unsafe_allow_html=True)
+                    c1,c2 = st.columns(2)
+
+                    lp_padrao = localizar_padrao(row.get("Língua Portuguesa"), "Língua Portuguesa", etapa)
+                    mat_padrao = localizar_padrao(row.get("Matemática"), "Matemática", etapa)
 
                     c1.markdown(
-                        f'<div class="metric-card">'
+                        f'<div class="metric-card" style="min-height:230px;">'
                         f'<div class="metric-label">Língua Portuguesa</div>'
-                        f'<div class="metric-value">Nível {fmt(row.get("Nível Língua Portuguesa"),0)}</div>'
-                        f'<div class="metric-foot">{row.get("Padrão Língua Portuguesa","—")}</div>'
+                        f'<div class="metric-value" style="font-size:20px;">'
+                        f'{fmt(row.get("Língua Portuguesa"),2)} • '
+                        f'Nível {fmt(row.get("Nível Língua Portuguesa"),0)} • {lp_padrao}</div>'
+                        f'<div class="metric-foot" style="font-size:13px;line-height:1.45;">'
+                        f'{EXPLICACAO_PADROES.get(lp_padrao,"")}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
 
                     c2.markdown(
-                        f'<div class="metric-card">'
+                        f'<div class="metric-card" style="min-height:230px;">'
                         f'<div class="metric-label">Matemática</div>'
-                        f'<div class="metric-value">Nível {fmt(row.get("Nível Matemática"),0)}</div>'
-                        f'<div class="metric-foot">{row.get("Padrão Matemática","—")}</div>'
+                        f'<div class="metric-value" style="font-size:20px;">'
+                        f'{fmt(row.get("Matemática"),2)} • '
+                        f'Nível {fmt(row.get("Nível Matemática"),0)} • {mat_padrao}</div>'
+                        f'<div class="metric-foot" style="font-size:13px;line-height:1.45;">'
+                        f'{EXPLICACAO_PADROES.get(mat_padrao,"")}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
 
                 st.plotly_chart(
-                    grafico_lp_mat(
-                        base,
-                        f"Série histórica das proficiências — {etapa}"
-                    ),
+                    grafico_lp_mat(base, f"Série histórica das proficiências — {etapa}"),
                     use_container_width=True
                 )
 
@@ -1739,18 +2020,11 @@ elif pagina == "Aprendizagem":
                         lista,
                         key="apr_escola"
                     )
-
                     d = dados_escola(escola, etapa)
-
                     st.plotly_chart(
-                        grafico_lp_mat(
-                            d,
-                            f"Série histórica das proficiências — {escola}"
-                        ),
+                        grafico_lp_mat(d, f"Série histórica das proficiências — {escola}"),
                         use_container_width=True
                     )
-
-        # ====================================================
         # ORGANIZAÇÃO DOS NÍVEIS
         # ====================================================
         with abas_apr[1]:
@@ -2117,6 +2391,18 @@ elif pagina == "Aprendizagem":
                     height=520
                 )
 
+                st.markdown('<div class="section-title">Matriz nível × tendência</div>', unsafe_allow_html=True)
+                fig_m, comp_matriz = fig_matriz_nivel_tendencia(
+                    comp_m,
+                    "Município",
+                    disciplina_m,
+                    ano_ini_m,
+                    ano_fim_m,
+                    etapa_m
+                )
+                cards_movimento(comp_matriz)
+                st.plotly_chart(fig_m, use_container_width=True)
+
         # RANKING DE ESCOLAS
         # ====================================================
         with abas_apr[3]:
@@ -2282,6 +2568,18 @@ elif pagina == "Aprendizagem":
                     use_container_width=True,
                     height=520
                 )
+
+                st.markdown('<div class="section-title">Matriz nível × tendência</div>', unsafe_allow_html=True)
+                fig_e, comp_matriz_e = fig_matriz_nivel_tendencia(
+                    comp_e,
+                    "Escola",
+                    disciplina_e,
+                    ano_ini_e,
+                    ano_fim_e,
+                    etapa_e
+                )
+                cards_movimento(comp_matriz_e)
+                st.plotly_chart(fig_e, use_container_width=True)
 
     painel_aprendizagem()
 
