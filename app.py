@@ -474,26 +474,31 @@ def texto_mudanca_nivel(valor):
     return "manteve"
 
 def legenda_niveis_html(etapa):
+    """
+    Gera a legenda em HTML sem indentação inicial.
+    Isso evita que o Markdown interprete o HTML como bloco de código.
+    """
     cores = cores_niveis(etapa)
     blocos = []
+
     for nivel, faixa in FAIXAS_NIVEIS[etapa]:
         blocos.append(
-            f"""
-            <div style="display:flex;align-items:center;gap:8px;
-                        border:1px solid #E5E7EB;background:white;
-                        border-radius:9px;padding:7px 9px;">
-                <span style="width:14px;height:14px;border-radius:3px;
-                             background:{cores[nivel]};display:inline-block;"></span>
-                <span style="font-weight:700;font-size:12px;">Nível {nivel}</span>
-                <span style="font-size:11px;color:#6B7280;">{faixa}</span>
-            </div>
-            """
+            f'<div style="display:flex;align-items:center;gap:8px;'
+            f'border:1px solid #E5E7EB;background:white;'
+            f'border-radius:9px;padding:7px 9px;">'
+            f'<span style="width:14px;height:14px;border-radius:3px;'
+            f'background:{cores[nivel]};display:inline-block;"></span>'
+            f'<span style="font-weight:700;font-size:12px;">Nível {nivel}</span>'
+            f'<span style="font-size:11px;color:#6B7280;">{faixa}</span>'
+            f'</div>'
         )
+
     return (
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));'
+        '<div style="display:grid;'
+        'grid-template-columns:repeat(auto-fit,minmax(170px,1fr));'
         'gap:7px;margin:8px 0 14px 0;">'
         + "".join(blocos)
-        + "</div>"
+        + '</div>'
     )
 
 def ranking_municipios_ano(etapa, ano, disciplina):
