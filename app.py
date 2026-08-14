@@ -444,6 +444,59 @@ FAIXAS_NIVEIS = {
     ],
 }
 
+# Padrões de desempenho que já havíamos definido na preparação das bases.
+# As faixas são diferentes entre Língua Portuguesa e Matemática.
+PADROES_DESEMPENHO = {
+    "Língua Portuguesa": {
+        "Fundamental I": [
+            ("Abaixo do básico", "Até 179"),
+            ("Básico", "180 a 219"),
+            ("Adequado", "220 a 259"),
+            ("Avançado", "260 ou mais"),
+        ],
+        "Fundamental II": [
+            ("Abaixo do básico", "Até 224"),
+            ("Básico", "225 a 274"),
+            ("Adequado", "275 a 324"),
+            ("Avançado", "325 ou mais"),
+        ],
+    },
+    "Matemática": {
+        "Fundamental I": [
+            ("Abaixo do básico", "Até 204"),
+            ("Básico", "205 a 244"),
+            ("Adequado", "245 a 284"),
+            ("Avançado", "285 ou mais"),
+        ],
+        "Fundamental II": [
+            ("Abaixo do básico", "Até 224"),
+            ("Básico", "225 a 299"),
+            ("Adequado", "300 a 349"),
+            ("Avançado", "350 ou mais"),
+        ],
+    },
+}
+
+EXPLICACAO_PADROES = {
+    "Abaixo do básico": (
+        "Resultado situado abaixo do patamar básico definido para a etapa. "
+        "Indica necessidade de atenção prioritária às aprendizagens essenciais."
+    ),
+    "Básico": (
+        "Resultado dentro do patamar básico. Há aprendizagens consolidadas, "
+        "mas ainda existem habilidades importantes a desenvolver."
+    ),
+    "Adequado": (
+        "Resultado compatível com o patamar adequado para a etapa, indicando "
+        "maior consolidação das aprendizagens avaliadas."
+    ),
+    "Avançado": (
+        "Resultado acima do patamar adequado, com desempenho elevado na escala "
+        "de proficiência considerada."
+    ),
+}
+
+
 def cores_niveis(etapa):
     return CORES_NIVEIS_FI if etapa == "Fundamental I" else CORES_NIVEIS_FII
 
@@ -472,6 +525,103 @@ def texto_mudanca_nivel(valor):
         n = abs(valor)
         return f"↓ {n} nível" if n == 1 else f"↓ {n} níveis"
     return "manteve"
+
+
+def cor_padrao(padrao):
+    return {
+        "Abaixo do básico": "#D32F2F",
+        "Básico": "#FFA726",
+        "Adequado": "#66BB6A",
+        "Avançado": "#1B5E20",
+    }.get(padrao, "#BDBDBD")
+
+def painel_padrao_disciplina(disciplina, etapa):
+    """
+    Exibe a escala de interpretação usada no projeto para a disciplina e etapa.
+    Não mostra código de cor; mostra faixa, padrão e significado.
+    """
+    st.markdown(
+        f'<div class="section-title">{disciplina} — {etapa}</div>',
+        unsafe_allow_html=True
+    )
+
+    colunas = st.columns(4)
+
+    for col, (padrao, faixa) in zip(
+        colunas,
+        PADROES_DESEMPENHO[disciplina][etapa]
+    ):
+        cor = cor_padrao(padrao)
+        significado = EXPLICACAO_PADROES[padrao]
+
+        col.markdown(
+            f'<div class="metric-card" style="border-top:5px solid {cor};min-height:210px;">'
+            f'<div class="metric-label">{padrao}</div>'
+            f'<div class="metric-value" style="font-size:20px;">{faixa}</div>'
+            f'<div class="metric-foot" style="font-size:13px;line-height:1.45;">'
+            f'{significado}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+def localizar_padrao(valor, disciplina, etapa):
+    if pd.isna(valor):
+        return None
+
+    valor = float(valor)
+
+    if disciplina == "Língua Portuguesa":
+        if etapa == "Fundamental I":
+            if valor <= 179:
+                return "Abaixo do básico"
+            if valor <= 219:
+                return "Básico"
+            if valor <= 259:
+                return "Adequado"
+            return "Avançado"
+
+        if valor <= 224:
+            return "Abaixo do básico"
+        if valor <= 274:
+            return "Básico"
+        if valor <= 324:
+            return "Adequado"
+        return "Avançado"
+
+    if etapa == "Fundamental I":
+        if valor <= 204:
+            return "Abaixo do básico"
+        if valor <= 244:
+            return "Básico"
+        if valor <= 284:
+            return "Adequado"
+        return "Avançado"
+
+    if valor <= 224:
+        return "Abaixo do básico"
+    if valor <= 299:
+        return "Básico"
+    if valor <= 349:
+        return "Adequado"
+    return "Avançado"
+
+def card_situacao_atual(disciplina, valor, nivel, etapa, padrao_base=None):
+    padrao = padrao_base
+    if pd.isna(padrao) or str(padrao).strip() in {"", "<NA>", "nan"}:
+        padrao = localizar_padrao(valor, disciplina, etapa)
+
+    cor = cor_padrao(padrao)
+
+    valor_txt = fmt(valor, 2)
+    nivel_txt = "—" if pd.isna(nivel) else f"Nível {int(float(nivel))}"
+
+    return (
+        f'<div class="metric-card" style="border-top:5px solid {cor};min-height:160px;">'
+        f'<div class="metric-label">{disciplina}</div>'
+        f'<div class="metric-value">{valor_txt}</div>'
+        f'<div class="metric-foot"><b>{nivel_txt}</b> • {padrao or "—"}</div>'
+        f'</div>'
+    )
 
 def legenda_niveis_html(etapa):
     """
@@ -1365,12 +1515,13 @@ elif pagina == "Aprendizagem":
         # ====================================================
         with abas_apr[1]:
             st.markdown(
-                '<div class="section-title">Classificação por níveis de proficiência</div>',
+                '<div class="section-title">Escalas de proficiência do SAEB usadas no painel</div>',
                 unsafe_allow_html=True
             )
             st.markdown(
-                '<div class="hero-sub">As mesmas cores são utilizadas nos rankings. '
-                'Quanto maior o nível, mais a escala avança do vermelho para o verde.</div>',
+                '<div class="hero-sub">Língua Portuguesa e Matemática possuem faixas de '
+                'interpretação diferentes. Por isso, a classificação deve ser lida sempre '
+                'junto da disciplina e da etapa selecionadas.</div>',
                 unsafe_allow_html=True
             )
 
@@ -1383,35 +1534,124 @@ elif pagina == "Aprendizagem":
             ) or "Fundamental I"
 
             st.markdown(
-                legenda_niveis_html(etapa_nivel),
+                '<div class="info"><b>Como ler:</b> o <b>nível numérico</b> indica a faixa '
+                'detalhada da escala de proficiência. O <b>padrão de desempenho</b> '
+                '(Abaixo do básico, Básico, Adequado ou Avançado) resume a interpretação '
+                'do resultado. As faixas do padrão são diferentes em Língua Portuguesa e '
+                'Matemática.</div>',
                 unsafe_allow_html=True
             )
 
-            linhas = []
-            cores = cores_niveis(etapa_nivel)
+            disc_tabs = st.tabs([
+                "Língua Portuguesa",
+                "Matemática",
+                "Níveis numéricos"
+            ])
 
-            for nivel, faixa in FAIXAS_NIVEIS[etapa_nivel]:
-                linhas.append({
-                    "Nível": f"Nível {nivel}",
-                    "Faixa de proficiência": faixa,
-                    "Cor": cores[nivel],
-                })
+            with disc_tabs[0]:
+                painel_padrao_disciplina(
+                    "Língua Portuguesa",
+                    etapa_nivel
+                )
 
-            st.dataframe(
-                pd.DataFrame(linhas),
-                hide_index=True,
-                use_container_width=True
-            )
+                base_atual = dados_municipio(
+                    "Barueri",
+                    etapa_nivel
+                )
+                if not base_atual.empty:
+                    ano_atual = int(base_atual["Ano"].max())
+                    atual = ultima_linha(base_atual, ano_atual)
+
+                    if atual is not None:
+                        st.markdown(
+                            '<div class="section-title">Onde Barueri se encontra</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(
+                            card_situacao_atual(
+                                "Língua Portuguesa",
+                                atual.get("Língua Portuguesa"),
+                                atual.get("Nível Língua Portuguesa"),
+                                etapa_nivel,
+                                atual.get("Padrão Língua Portuguesa")
+                            ),
+                            unsafe_allow_html=True
+                        )
+                        st.caption(
+                            f"Último resultado disponível na base para {etapa_nivel}: {ano_atual}."
+                        )
+
+            with disc_tabs[1]:
+                painel_padrao_disciplina(
+                    "Matemática",
+                    etapa_nivel
+                )
+
+                base_atual = dados_municipio(
+                    "Barueri",
+                    etapa_nivel
+                )
+                if not base_atual.empty:
+                    ano_atual = int(base_atual["Ano"].max())
+                    atual = ultima_linha(base_atual, ano_atual)
+
+                    if atual is not None:
+                        st.markdown(
+                            '<div class="section-title">Onde Barueri se encontra</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(
+                            card_situacao_atual(
+                                "Matemática",
+                                atual.get("Matemática"),
+                                atual.get("Nível Matemática"),
+                                etapa_nivel,
+                                atual.get("Padrão Matemática")
+                            ),
+                            unsafe_allow_html=True
+                        )
+                        st.caption(
+                            f"Último resultado disponível na base para {etapa_nivel}: {ano_atual}."
+                        )
+
+            with disc_tabs[2]:
+                st.markdown(
+                    '<div class="section-title">Níveis numéricos da escala</div>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    '<div class="hero-sub">Esta escala detalhada é utilizada nas cores dos '
+                    'rankings. A cor identifica o nível; o código da cor não é exibido ao '
+                    'usuário.</div>',
+                    unsafe_allow_html=True
+                )
+
+                st.markdown(
+                    legenda_niveis_html(etapa_nivel),
+                    unsafe_allow_html=True
+                )
+
+                linhas = []
+                for nivel, faixa in FAIXAS_NIVEIS[etapa_nivel]:
+                    linhas.append({
+                        "Nível": f"Nível {nivel}",
+                        "Faixa de proficiência": faixa,
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(linhas),
+                    hide_index=True,
+                    use_container_width=True
+                )
 
             st.markdown(
-                '<div class="info"><b>Importante:</b> o ranking mede a posição relativa. '
-                'O nível mede a faixa de proficiência. Assim, um município ou escola pode '
-                'subir no ranking sem mudar de nível, ou melhorar sua pontuação e ainda perder '
-                'posições se os demais avançarem mais.</div>',
+                '<div class="info"><b>Ranking × nível:</b> posição no ranking e nível de '
+                'proficiência são informações diferentes. Uma rede ou escola pode melhorar '
+                'a pontuação e o nível e, ainda assim, perder posições se outras avançarem '
+                'mais no mesmo período.</div>',
                 unsafe_allow_html=True
             )
 
-        # ====================================================
         # RANKING DE MUNICÍPIOS
         # ====================================================
         with abas_apr[2]:
