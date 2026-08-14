@@ -1242,7 +1242,9 @@ def historico_rede_barueri(etapa):
 
 def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
     """
-    Escala visual simples por níveis, com marcador do resultado atual.
+    Escala visual por níveis, com marcador do resultado atual.
+    A altura e as margens foram ampliadas para que o valor e a seta
+    apareçam integralmente em telas menores.
     """
     coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
     valor = row.get(coluna)
@@ -1252,11 +1254,15 @@ def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
     niveis = [n for n, _ in faixas]
 
     fig = go.Figure()
+
     fig.add_trace(go.Bar(
-        x=[1]*len(niveis),
-        y=["Escala"]*len(niveis),
+        x=[1] * len(niveis),
+        y=["Escala"] * len(niveis),
         orientation="h",
-        marker_color=[cores_niveis(etapa).get(n, "#BDBDBD") for n in niveis],
+        marker_color=[
+            cores_niveis(etapa).get(n, "#BDBDBD")
+            for n in niveis
+        ],
         text=[str(n) for n in niveis],
         textposition="inside",
         insidetextanchor="middle",
@@ -1266,31 +1272,48 @@ def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
 
     fig.update_layout(
         barmode="stack",
-        height=170,
-        margin=dict(l=20,r=20,t=35,b=25),
-        xaxis=dict(visible=False),
+        height=255,
+        margin=dict(l=20, r=20, t=52, b=82),
+        xaxis=dict(
+            visible=False,
+            range=[0, len(niveis)]
+        ),
         yaxis=dict(visible=False),
         paper_bgcolor="white",
         plot_bgcolor="white",
         title=dict(
             text=f"{disciplina} — {etapa}",
-            x=.01, xanchor="left", font=dict(size=16)
+            x=.01,
+            xanchor="left",
+            font=dict(size=16)
         )
     )
 
     if pd.notna(valor) and pd.notna(nivel):
         n = int(float(nivel))
         maxn = max(niveis) if niveis else 1
-        xpos = (n + .5) / (maxn + 1)
+
+        # posição central da célula do nível
+        xpos = (n + 0.5) / (maxn + 1)
+
         fig.add_annotation(
-            x=xpos, y=.15, xref="paper", yref="paper",
+            x=xpos,
+            y=-0.02,
+            xref="paper",
+            yref="paper",
             text=f"<b>{fmt(valor,2)}</b><br>Nível {n}",
-            showarrow=True, arrowhead=2, ax=0, ay=45,
-            bgcolor="#0E5A70", font=dict(color="white", size=11),
-            bordercolor="#0E5A70"
+            showarrow=True,
+            arrowhead=2,
+            ax=0,
+            ay=-42,
+            bgcolor="#0E5A70",
+            font=dict(color="white", size=11),
+            bordercolor="#0E5A70",
+            borderpad=4
         )
 
     return fig
+
 
 def resultado_evolucao_barueri(etapa, disciplina, anos=(2019, 2023, 2025)):
     coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
@@ -1389,6 +1412,82 @@ def fig_matriz_nivel_tendencia(df, entidade, disciplina, ano_ini, ano_fim, etapa
     fig.update_xaxes(gridcolor="#EDF1F4")
     fig.update_yaxes(gridcolor="#EDF1F4")
     return fig, comp
+
+
+def grafico_comparacao_etapas_escola(df_fi, df_fii, indicador, escola, casas=2):
+    """
+    Compara Fundamental I e Fundamental II da mesma escola no mesmo gráfico.
+    """
+    fig = go.Figure()
+
+    if not df_fi.empty and indicador in df_fi.columns:
+        fig.add_trace(go.Scatter(
+            x=df_fi["Ano"],
+            y=df_fi[indicador],
+            mode="lines+markers+text",
+            name=f"Fundamental I — {indicador}",
+            text=[
+                fmt(v, casas) if pd.notna(v) else ""
+                for v in df_fi[indicador]
+            ],
+            textposition="top center",
+            line=dict(color=AZUL, width=3),
+            marker=dict(size=8)
+        ))
+
+    if not df_fii.empty and indicador in df_fii.columns:
+        fig.add_trace(go.Scatter(
+            x=df_fii["Ano"],
+            y=df_fii[indicador],
+            mode="lines+markers+text",
+            name=f"Fundamental II — {indicador}",
+            text=[
+                fmt(v, casas) if pd.notna(v) else ""
+                for v in df_fii[indicador]
+            ],
+            textposition="bottom center",
+            line=dict(color=LILAS, width=3),
+            marker=dict(size=8)
+        ))
+
+    ytitle = (
+        "Taxa de aprovação (%)"
+        if indicador == "Aprovação Geral"
+        else indicador
+    )
+
+    fig = estilo_fig(
+        fig,
+        f"{escola} — Fundamental I × Fundamental II — {indicador}",
+        ytitle,
+        505
+    )
+
+    if indicador == "Aprovação Geral":
+        fig.update_yaxes(range=[0, 105])
+
+    return fig
+
+
+def escolas_com_duas_etapas():
+    """
+    Retorna escolas que possuem registros em Fundamental I e Fundamental II.
+    """
+    etapas_por_escola = (
+        escolas[["Escola", "Etapa"]]
+        .dropna()
+        .drop_duplicates()
+        .groupby("Escola")["Etapa"]
+        .agg(set)
+    )
+
+    nomes = [
+        nome
+        for nome, etapas in etapas_por_escola.items()
+        if {"Fundamental I", "Fundamental II"}.issubset(etapas)
+    ]
+
+    return sorted(nomes)
 
 def cards_movimento(comp):
     total = len(comp)
@@ -1788,7 +1887,7 @@ elif pagina == "Escolas":
                     unsafe_allow_html=True
                 )
 
-        t1,t2,t3 = st.tabs(["Desempenho","Fluxo e rendimento","Comparar escolas"])
+        t1,t2,t3,t4 = st.tabs(["Desempenho","Fluxo e rendimento","Comparar escolas","Fundamental I × Fundamental II"])
 
         with t1:
             st.plotly_chart(
@@ -1898,6 +1997,139 @@ elif pagina == "Escolas":
                         ),
                         use_container_width=True
                     )
+
+        with t4:
+            st.markdown(
+                '<div class="section-title">Fundamental I × Fundamental II na mesma escola</div>',
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                '<div class="hero-sub">Esta comparação só é exibida para escolas que possuem '
+                'resultados nas duas etapas. Os dois segmentos aparecem no mesmo gráfico.</div>',
+                unsafe_allow_html=True
+            )
+
+            lista_duas_etapas = escolas_com_duas_etapas()
+
+            busca_duas = st.text_input(
+                "Buscar escola com as duas etapas",
+                placeholder="Digite parte do nome — não é necessário usar acentos",
+                key="busca_escola_duas_etapas"
+            )
+
+            if busca_duas:
+                lista_duas_etapas = [
+                    nome
+                    for nome in lista_duas_etapas
+                    if normalizar_texto(busca_duas)
+                    in normalizar_texto(nome)
+                ]
+
+            if not lista_duas_etapas:
+                st.info(
+                    "Nenhuma escola com resultados em Fundamental I e Fundamental II foi encontrada para essa busca."
+                )
+            else:
+                escola_duas = st.selectbox(
+                    "Escola",
+                    lista_duas_etapas,
+                    key="escola_duas_etapas"
+                )
+
+                df_fi = dados_escola(
+                    escola_duas,
+                    "Fundamental I"
+                )
+
+                df_fii = dados_escola(
+                    escola_duas,
+                    "Fundamental II"
+                )
+
+                anos_comuns = sorted(
+                    set(int(a) for a in df_fi["Ano"].dropna().unique())
+                    | set(int(a) for a in df_fii["Ano"].dropna().unique())
+                )
+
+                if anos_comuns:
+                    c1, c2 = st.columns(2)
+
+                    with c1:
+                        ano_ini_duas = st.selectbox(
+                            "Ano inicial",
+                            anos_comuns,
+                            index=0,
+                            key="duas_etapas_ini"
+                        )
+
+                    finais_duas = [
+                        a for a in anos_comuns
+                        if a >= ano_ini_duas
+                    ]
+
+                    with c2:
+                        ano_fim_duas = st.selectbox(
+                            "Ano final",
+                            finais_duas,
+                            index=len(finais_duas)-1,
+                            key="duas_etapas_fim"
+                        )
+
+                    fi_periodo = df_fi[
+                        df_fi["Ano"].between(
+                            ano_ini_duas,
+                            ano_fim_duas
+                        )
+                    ].copy()
+
+                    fii_periodo = df_fii[
+                        df_fii["Ano"].between(
+                            ano_ini_duas,
+                            ano_fim_duas
+                        )
+                    ].copy()
+
+                    tabs_duas = st.tabs([
+                        "IDEB",
+                        "Língua Portuguesa",
+                        "Matemática",
+                        "Aprovação",
+                        "N",
+                        "P"
+                    ])
+
+                    configuracoes = [
+                        ("IDEB", 1),
+                        ("Língua Portuguesa", 1),
+                        ("Matemática", 1),
+                        ("Aprovação Geral", 1),
+                        ("N", 2),
+                        ("P", 3),
+                    ]
+
+                    for tab, (indicador_duas, casas_duas) in zip(
+                        tabs_duas,
+                        configuracoes
+                    ):
+                        with tab:
+                            st.plotly_chart(
+                                grafico_comparacao_etapas_escola(
+                                    fi_periodo,
+                                    fii_periodo,
+                                    indicador_duas,
+                                    escola_duas,
+                                    casas=casas_duas
+                                ),
+                                use_container_width=True
+                            )
+
+                    st.markdown(
+                        '<div class="info"><b>Importante:</b> Fundamental I e Fundamental II '
+                        'não são somados. A visualização coloca as duas etapas lado a lado '
+                        'apenas para comparação da trajetória da mesma unidade escolar.</div>',
+                        unsafe_allow_html=True
+                    )
+
 
     painel_escolas()
 
