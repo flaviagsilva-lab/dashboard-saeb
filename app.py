@@ -144,6 +144,18 @@ def carregar_bases():
             df["Nota Padronizada Matemática"].clip(0, 10)
         )
 
+        # N já existe na base e continua sendo a fonte prioritária.
+        # Algumas linhas recentes do CSV analítico vieram com N vazio.
+        # Nesses casos, apenas para uso no painel, preenchemos pela média
+        # das duas notas padronizadas, sem alterar o CSV original.
+        n_calculado = (
+            df["Nota Padronizada LP"] +
+            df["Nota Padronizada Matemática"]
+        ) / 2.0
+
+        df["N"] = pd.to_numeric(df["N"], errors="coerce")
+        df["N"] = df["N"].fillna(n_calculado)
+
     inv["Investimento por Estudante"] = pd.to_numeric(
         inv["Investimento por Estudante"], errors="coerce"
     )
@@ -2699,7 +2711,11 @@ elif pagina == "Escolas":
 
     @st.fragment
     def painel_escolas():
-        etapa = st.selectbox("Etapa", ETAPAS, key="esc_etapa")
+        etapa = st.selectbox(
+            "Etapa",
+            ["Fundamental I", "Fundamental II", "Ambos"],
+            key="esc_etapa"
+        )
 
         busca_escola = st.text_input(
             "Buscar escola",
@@ -2707,12 +2723,31 @@ elif pagina == "Escolas":
             key="busca_escola_principal"
         )
 
+        if etapa == "Ambos":
+            nomes_fi = set(
+                escolas.loc[
+                    escolas["Etapa"] == "Fundamental I",
+                    "Escola"
+                ].dropna().astype(str)
+            )
+            nomes_fii = set(
+                escolas.loc[
+                    escolas["Etapa"] == "Fundamental II",
+                    "Escola"
+                ].dropna().astype(str)
+            )
+            nomes_ambas = nomes_fi.intersection(nomes_fii)
+
+            filtro_escola = escolas["Escola"].isin(nomes_ambas)
+        else:
+            filtro_escola = (escolas["Etapa"] == etapa)
+
         lista = filtrar_nomes_busca(
             escolas,
             "Escola",
             "Escola_Busca",
             busca_escola,
-            filtro=(escolas["Etapa"] == etapa)
+            filtro=filtro_escola
         )
 
         if not lista:
@@ -2726,6 +2761,125 @@ elif pagina == "Escolas":
                 key="escola_principal"
             )
             st.form_submit_button("Aplicar filtros", type="primary")
+
+        if etapa == "Ambos":
+            fi_escola = dados_escola(escola, "Fundamental I")
+            fii_escola = dados_escola(escola, "Fundamental II")
+
+            anos_ambos = sorted(
+                set(int(a) for a in fi_escola["Ano"].dropna().unique())
+                | set(int(a) for a in fii_escola["Ano"].dropna().unique())
+            )
+
+            if not anos_ambos:
+                st.info("Não há anos disponíveis para comparar as duas etapas.")
+                return
+
+            intervalo_ambos = st.select_slider(
+                "Período",
+                options=anos_ambos,
+                value=(anos_ambos[0], anos_ambos[-1]),
+                key="periodo_escola_ambos"
+            )
+
+            fi_escola = fi_escola[
+                fi_escola["Ano"].between(intervalo_ambos[0], intervalo_ambos[1])
+            ].copy()
+            fii_escola = fii_escola[
+                fii_escola["Ano"].between(intervalo_ambos[0], intervalo_ambos[1])
+            ].copy()
+
+            st.caption(
+                "Modo Ambos: a mesma escola é acompanhada nas duas etapas. "
+                "As proficiências Saeb preservam as escalas próprias de cada etapa."
+            )
+
+            abas_ambos = st.tabs([
+                "IDEB",
+                "Língua Portuguesa",
+                "Matemática",
+                "Notas padronizadas",
+                "Aprovação",
+                "N e P"
+            ])
+
+            with abas_ambos[0]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "IDEB",
+                        f"IDEB — Fundamental I × Fundamental II — {escola}",
+                        casas=1, metas=True
+                    ),
+                    use_container_width=True
+                )
+
+            with abas_ambos[1]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "Língua Portuguesa",
+                        f"Língua Portuguesa — Fundamental I × Fundamental II — {escola}",
+                        casas=1
+                    ),
+                    use_container_width=True
+                )
+
+            with abas_ambos[2]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "Matemática",
+                        f"Matemática — Fundamental I × Fundamental II — {escola}",
+                        casas=1
+                    ),
+                    use_container_width=True
+                )
+
+            with abas_ambos[3]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "Nota Padronizada LP",
+                        f"LP padronizada (0–10) — FI × FII — {escola}",
+                        casas=2
+                    ),
+                    use_container_width=True
+                )
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "Nota Padronizada Matemática",
+                        f"Matemática padronizada (0–10) — FI × FII — {escola}",
+                        casas=2
+                    ),
+                    use_container_width=True
+                )
+
+            with abas_ambos[4]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "Aprovação Geral",
+                        f"Aprovação — Fundamental I × Fundamental II — {escola}",
+                        casas=1
+                    ),
+                    use_container_width=True
+                )
+
+            with abas_ambos[5]:
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "N",
+                        f"Nota Média Padronizada (N) — FI × FII — {escola}",
+                        casas=2
+                    ),
+                    use_container_width=True
+                )
+                st.plotly_chart(
+                    grafico_comparacao_etapas(
+                        fi_escola, fii_escola, "P",
+                        f"Indicador de Rendimento (P) — FI × FII — {escola}",
+                        casas=3
+                    ),
+                    use_container_width=True
+                )
+
+            return
 
         anos_e = sorted(
             int(a) for a in escolas.loc[
@@ -2764,7 +2918,12 @@ elif pagina == "Escolas":
                     unsafe_allow_html=True
                 )
 
-        t1,t2,t3,t4 = st.tabs(["Desempenho","Fluxo e rendimento","Comparar escolas","Fundamental I × Fundamental II"])
+        t1,t2,t3,t4 = st.tabs([
+            "Desempenho",
+            "Fluxo e rendimento",
+            "Comparar escolas",
+            "Ranking de escolas"
+        ])
 
         with t1:
             st.plotly_chart(
@@ -2876,125 +3035,126 @@ elif pagina == "Escolas":
                     )
 
         with t4:
-            st.markdown(
-                '<div class="section-title">Fundamental I × Fundamental II da mesma escola</div>',
-                unsafe_allow_html=True
-            )
-            st.markdown(
-                '<div class="hero-sub">A comparação acompanha a mesma unidade escolar nas duas etapas. '
-                'Para proficiência e níveis SAEB, a interpretação deve respeitar a escala própria de cada etapa.</div>',
-                unsafe_allow_html=True
+            st.caption(
+                "O ranking pertence ao nível Escolas. "
+                "A posição é recalculada de acordo com a etapa, período e universo selecionados."
             )
 
-            escolas_fi = set(
-                escolas.loc[
-                    escolas["Etapa"] == "Fundamental I",
-                    "Escola"
-                ].dropna().astype(str)
-            )
-            escolas_fii = set(
-                escolas.loc[
-                    escolas["Etapa"] == "Fundamental II",
-                    "Escola"
-                ].dropna().astype(str)
-            )
-            escolas_ambas = sorted(escolas_fi.intersection(escolas_fii))
-
-            busca_ambas = st.text_input(
-                "Buscar escola com as duas etapas",
-                placeholder="Digite parte do nome — pode digitar sem acentos",
-                key="esc_fifii_busca"
-            )
-
-            if busca_ambas:
-                termo = normalizar_texto(busca_ambas)
-                escolas_ambas_filtradas = [
-                    e for e in escolas_ambas
-                    if termo in normalizar_texto(e)
-                ]
-            else:
-                escolas_ambas_filtradas = escolas_ambas
-
-            if not escolas_ambas_filtradas:
-                st.info("Nenhuma escola com Fundamental I e Fundamental II foi encontrada para essa busca.")
-            else:
-                escola_ff = st.selectbox(
-                    "Escola",
-                    escolas_ambas_filtradas,
-                    key="esc_fifii_escola"
+            c1, c2 = st.columns([1.5, 1])
+            with c1:
+                indicador_e = st.selectbox(
+                    "Indicador do ranking",
+                    list(RANKING_INDICADORES.keys()),
+                    key="rank_e_indicador_escolas"
+                )
+            with c2:
+                incluir_itbs_e = st.checkbox(
+                    "Incluir ITBs",
+                    value=True,
+                    key="rank_e_incluir_itbs_escolas",
+                    help="Os ITBs continuam na base e nas consultas individuais."
                 )
 
-                fi = dados_escola(escola_ff, "Fundamental I")
-                fii = dados_escola(escola_ff, "Fundamental II")
+            anos_rank_e = sorted(
+                int(a)
+                for a in escolas.loc[
+                    escolas["Etapa"] == etapa,
+                    "Ano"
+                ].dropna().unique()
+            )
 
-                anos_ff = sorted(
-                    set(int(a) for a in fi["Ano"].dropna().unique())
-                    | set(int(a) for a in fii["Ano"].dropna().unique())
-                )
-
-                if anos_ff:
-                    c1,c2 = st.columns(2)
-                    with c1:
-                        ini_ff = st.selectbox(
-                            "Ano inicial",
-                            anos_ff,
-                            index=0,
-                            key="esc_fifii_ini"
-                        )
-                    finais_ff = [a for a in anos_ff if a >= ini_ff]
-                    with c2:
-                        fim_ff = st.selectbox(
-                            "Ano final",
-                            finais_ff,
-                            index=len(finais_ff)-1,
-                            key="esc_fifii_fim"
-                        )
-
-                    fi = fi[fi["Ano"].between(ini_ff, fim_ff)].copy()
-                    fii = fii[fii["Ano"].between(ini_ff, fim_ff)].copy()
-
-                    tabs_ff = st.tabs([
-                        "IDEB",
-                        "Língua Portuguesa",
-                        "Matemática",
-                        "LP padronizada",
-                        "MAT padronizada",
-                        "Aprovação",
-                        "N",
-                        "P"
-                    ])
-
-                    indicadores_ff = [
-                        ("IDEB", 1, True),
-                        ("Língua Portuguesa", 1, False),
-                        ("Matemática", 1, False),
-                        ("Nota Padronizada LP", 2, False),
-                        ("Nota Padronizada Matemática", 2, False),
-                        ("Aprovação Geral", 1, False),
-                        ("N", 2, False),
-                        ("P", 3, False),
-                    ]
-
-                    for tab, (ind_ff, casas_ff, metas_ff) in zip(tabs_ff, indicadores_ff):
-                        with tab:
-                            st.plotly_chart(
-                                grafico_comparacao_etapas(
-                                    fi,
-                                    fii,
-                                    ind_ff,
-                                    f"{ind_ff} — Fundamental I × Fundamental II — {escola_ff}",
-                                    casas=casas_ff,
-                                    metas=metas_ff
-                                ),
-                                use_container_width=True
-                            )
-
-                    st.markdown(
-                        '<div class="info"><b>Leitura:</b> as linhas conectam anos da mesma escola. '
-                        'Elas não representam equivalência pedagógica entre os níveis de proficiência '
-                        'do Fundamental I e do Fundamental II.</div>',
-                        unsafe_allow_html=True
+            if len(anos_rank_e) < 2:
+                st.info("Não há edições suficientes para calcular movimento no ranking.")
+            else:
+                c1, c2, c3 = st.columns([1,1,1])
+                with c1:
+                    ano_ini_e = st.selectbox(
+                        "Ano inicial",
+                        anos_rank_e[:-1],
+                        index=max(0, len(anos_rank_e)-2),
+                        key="rank_e_ini_escolas"
                     )
+
+                finais_rank_e = [a for a in anos_rank_e if a > ano_ini_e]
+
+                with c2:
+                    ano_fim_e = st.selectbox(
+                        "Ano final",
+                        finais_rank_e,
+                        index=len(finais_rank_e)-1,
+                        key="rank_e_fim_escolas"
+                    )
+
+                with c3:
+                    quantidade_e = st.selectbox(
+                        "Quantidade exibida",
+                        [10, 20, 30, 50, "Todos"],
+                        index=1,
+                        key="rank_e_qtd_escolas"
+                    )
+
+                comp_e = comp_ranking_escolas_indicador(
+                    etapa,
+                    indicador_e,
+                    ano_ini_e,
+                    ano_fim_e,
+                    incluir_itbs=incluir_itbs_e
+                )
+
+                comparaveis_e = comp_e["Posição Inicial"].notna().sum() if not comp_e.empty else 0
+
+                st.caption(
+                    f"Universo atual: {comp_e['Escola'].nunique() if not comp_e.empty else 0} escolas • "
+                    f"{comparaveis_e} com resultado comparável entre {ano_ini_e} e {ano_fim_e} • "
+                    + ("ITBs incluídos." if incluir_itbs_e else "ITBs excluídos e posições recalculadas.")
+                )
+
+                if comp_e.empty:
+                    st.info("Não há dados suficientes para montar o ranking selecionado.")
+                else:
+                    ranking_visual_com_barras(
+                        comp_e,
+                        "Escola",
+                        indicador_e,
+                        quantidade=quantidade_e,
+                        destaque_barueri=False
+                    )
+
+                    botao_download_ranking(
+                        comp_e, "Escola", indicador_e, quantidade_e,
+                        f"escolas_{etapa}_{indicador_e}_{ano_fim_e}"
+                    )
+
+                    with st.expander("📊 Versão gráfica para visualizar ou baixar em PNG"):
+                        st.plotly_chart(
+                            grafico_ranking_download(
+                                comp_e, "Escola", indicador_e, quantidade_e
+                            ),
+                            use_container_width=True,
+                            config={
+                                "displaylogo": False,
+                                "toImageButtonOptions": {"format": "png", "scale": 2}
+                            }
+                        )
+
+                    if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+                        disciplina_e = (
+                            "Língua Portuguesa"
+                            if indicador_e.startswith("Língua")
+                            else "Matemática"
+                        )
+                        st.markdown("#### Matriz nível × tendência")
+                        fig_e, comp_matriz_e = fig_matriz_nivel_tendencia(
+                            pd.DataFrame(),
+                            "Escola",
+                            disciplina_e,
+                            ano_ini_e,
+                            ano_fim_e,
+                            etapa,
+                            incluir_itbs=incluir_itbs_e
+                        )
+                        cards_movimento(comp_matriz_e)
+                        st.plotly_chart(fig_e, use_container_width=True)
 
     painel_escolas()
 
@@ -3003,7 +3163,7 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
     st.markdown('<div class="hero-title">Diagnóstico, níveis de proficiência e rankings</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="hero-sub">Acompanhe a aprendizagem em Língua Portuguesa e Matemática, '
-        'a posição relativa de municípios e escolas e a mudança de nível entre duas edições.</div>',
+        'a posição relativa dos municípios e a mudança de nível entre duas edições.</div>',
         unsafe_allow_html=True
     )
 
@@ -3013,7 +3173,6 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
             "Visão geral",
             "Organização dos níveis",
             "Ranking de municípios",
-            "Ranking de escolas",
         ])
 
         # ====================================================
@@ -3497,142 +3656,6 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
                 cards_movimento(comp_matriz)
                 st.plotly_chart(fig_m, use_container_width=True)
 
-        # RANKING DE ESCOLAS
-        # ====================================================
-        with abas_apr[3]:
-            st.markdown(
-                '<div class="section-title">Ranking entre escolas</div>',
-                unsafe_allow_html=True
-            )
-            st.markdown(
-                '<div class="hero-sub">A classificação mostra posição atual, resultado do indicador, '
-                'IDEB da escola e movimento em relação ao ano inicial.</div>',
-                unsafe_allow_html=True
-            )
-
-            with st.form("form_ranking_escolas_v28"):
-                c1,c2,c3,c4 = st.columns([1.2,1.7,1,1])
-
-                with c1:
-                    etapa_e = st.selectbox(
-                        "Etapa",
-                        ETAPAS,
-                        key="rank_e_etapa"
-                    )
-
-                with c2:
-                    indicador_e = st.selectbox(
-                        "Indicador do ranking",
-                        list(RANKING_INDICADORES.keys()),
-                        key="rank_e_indicador"
-                    )
-
-                anos_e = sorted(
-                    int(a)
-                    for a in escolas.loc[
-                        escolas["Etapa"] == etapa_e,
-                        "Ano"
-                    ].dropna().unique()
-                )
-
-                with c3:
-                    ano_ini_e = st.selectbox(
-                        "Ano inicial",
-                        anos_e[:-1],
-                        index=0,
-                        key="rank_e_ini"
-                    )
-
-                finais_e = [a for a in anos_e if a > ano_ini_e]
-
-                with c4:
-                    ano_fim_e = st.selectbox(
-                        "Ano final",
-                        finais_e,
-                        index=len(finais_e)-1,
-                        key="rank_e_fim"
-                    )
-
-                c5,c6 = st.columns([1,1])
-                with c5:
-                    quantidade_e = st.selectbox(
-                        "Quantidade exibida",
-                        [10, 20, 30, 50, "Todos"],
-                        index=1,
-                        key="rank_e_qtd"
-                    )
-                with c6:
-                    incluir_itbs_e = st.checkbox(
-                        "Incluir ITBs",
-                        value=True,
-                        key="rank_e_incluir_itbs",
-                        help="Os ITBs permanecem na base. Esta opção apenas controla sua participação neste ranking."
-                    )
-
-                st.form_submit_button("Aplicar ranking", type="primary")
-
-            comp_e = comp_ranking_escolas_indicador(
-                etapa_e,
-                indicador_e,
-                ano_ini_e,
-                ano_fim_e,
-                incluir_itbs=incluir_itbs_e
-            )
-
-            st.caption(
-                f"Universo do ranking: {comp_e['Escola'].nunique()} escolas "
-                + ("incluindo ITBs." if incluir_itbs_e else "com ITBs excluídos e posições recalculadas.")
-            )
-
-            if comp_e.empty:
-                st.info("Não há dados suficientes para montar o ranking selecionado.")
-            else:
-                ranking_visual_com_barras(
-                    comp_e,
-                    "Escola",
-                    indicador_e,
-                    quantidade=quantidade_e,
-                    destaque_barueri=False
-                )
-
-                botao_download_ranking(
-                    comp_e, "Escola", indicador_e, quantidade_e,
-                    f"escolas_{etapa_e}_{indicador_e}_{ano_fim_e}"
-                )
-                with st.expander("📊 Versão gráfica para visualizar ou baixar em PNG"):
-                    st.plotly_chart(
-                        grafico_ranking_download(
-                            comp_e, "Escola", indicador_e, quantidade_e
-                        ),
-                        use_container_width=True,
-                        config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
-                    )
-
-                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
-                    disciplina_e = (
-                        "Língua Portuguesa"
-                        if indicador_e.startswith("Língua")
-                        else "Matemática"
-                    )
-
-                    st.markdown(
-                        '<div class="section-title">Matriz nível × tendência</div>',
-                        unsafe_allow_html=True
-                    )
-
-                    fig_e, comp_matriz_e = fig_matriz_nivel_tendencia(
-                        pd.DataFrame(),
-                        "Escola",
-                        disciplina_e,
-                        ano_ini_e,
-                        ano_fim_e,
-                        etapa_e,
-                        incluir_itbs=incluir_itbs_e
-                    )
-
-                    cards_movimento(comp_matriz_e)
-                    st.plotly_chart(fig_e, use_container_width=True)
-
 
     painel_aprendizagem()
 
@@ -3922,15 +3945,75 @@ elif pagina == "Metodologia e dados":
     tabs_met = st.tabs(["Escalas Saeb", "IDEB e notas padronizadas", "Critérios de comparação", "Fontes e dados"])
 
     with tabs_met[0]:
-        st.markdown("#### Escalas de proficiência")
-        st.write("As proficiências de Língua Portuguesa e Matemática permanecem na escala original do Saeb.")
+        st.markdown("#### Escalas de proficiência e padrões de desempenho")
+        st.write(
+            "A nota Saeb aparece em pontos. O nível numérico localiza o resultado na escala; "
+            "o padrão de desempenho traduz pedagogicamente essa posição em "
+            "Abaixo do básico, Básico, Adequado ou Avançado."
+        )
+
         etapa_met = st.segmented_control(
             "Etapa", ETAPAS, default="Fundamental I",
             selection_mode="single", key="met_etapa"
         ) or "Fundamental I"
+
+        st.markdown("##### Língua Portuguesa")
+        painel_padrao_disciplina("Língua Portuguesa", etapa_met)
+
+        st.markdown("##### Matemática")
+        painel_padrao_disciplina("Matemática", etapa_met)
+
+        # Relação entre nível numérico e padrão. Algumas faixas de nível atravessam
+        # o ponto de corte entre dois padrões; isso é indicado explicitamente.
+        MAPA_PADRAO_NIVEL = {
+            "Fundamental I": {
+                "Língua Portuguesa": {
+                    0:"Abaixo do básico", 1:"Abaixo do básico", 2:"Abaixo do básico",
+                    3:"Abaixo do básico → Básico", 4:"Básico → Adequado",
+                    5:"Adequado", 6:"Adequado → Avançado",
+                    7:"Avançado", 8:"Avançado", 9:"Avançado", 10:"Avançado"
+                },
+                "Matemática": {
+                    0:"Abaixo do básico", 1:"Abaixo do básico", 2:"Abaixo do básico",
+                    3:"Abaixo do básico", 4:"Abaixo do básico → Básico",
+                    5:"Básico → Adequado", 6:"Adequado",
+                    7:"Adequado → Avançado", 8:"Avançado", 9:"Avançado", 10:"Avançado"
+                }
+            },
+            "Fundamental II": {
+                "Língua Portuguesa": {
+                    0:"Abaixo do básico", 1:"Abaixo do básico",
+                    2:"Básico", 3:"Básico", 4:"Adequado", 5:"Adequado",
+                    6:"Avançado", 7:"Avançado", 8:"Avançado", 9:"Avançado"
+                },
+                "Matemática": {
+                    0:"Abaixo do básico", 1:"Abaixo do básico",
+                    2:"Básico", 3:"Básico", 4:"Básico", 5:"Adequado",
+                    6:"Adequado", 7:"Avançado", 8:"Avançado", 9:"Avançado"
+                }
+            }
+        }
+
+        linhas_niveis = []
+        for nivel, faixa in FAIXAS_NIVEIS[etapa_met]:
+            linhas_niveis.append({
+                "Nível": f"Nível {nivel}",
+                "Faixa de proficiência": faixa,
+                "Categoria — Língua Portuguesa": MAPA_PADRAO_NIVEL[etapa_met]["Língua Portuguesa"][nivel],
+                "Categoria — Matemática": MAPA_PADRAO_NIVEL[etapa_met]["Matemática"][nivel],
+            })
+
+        st.markdown("##### Relação entre nível e categoria")
         st.dataframe(
-            pd.DataFrame(FAIXAS_NIVEIS[etapa_met], columns=["Nível", "Faixa de proficiência"]),
-            hide_index=True, use_container_width=True
+            pd.DataFrame(linhas_niveis),
+            hide_index=True,
+            use_container_width=True
+        )
+
+        st.info(
+            "Nível numérico e padrão de desempenho não têm sempre os mesmos pontos de corte. "
+            "Quando uma faixa atravessa a fronteira entre duas categorias, o painel mostra a transição "
+            "(por exemplo, Básico → Adequado), em vez de atribuir uma categoria incorreta ao nível inteiro."
         )
 
     with tabs_met[1]:
