@@ -98,6 +98,52 @@ def carregar_bases():
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
 
+        # ----------------------------------------------------
+        # Notas padronizadas do IDEB por componente (0 a 10)
+        # Fórmula:
+        # nota = (proficiência - limite_inferior) /
+        #        (limite_superior - limite_inferior) * 10
+        #
+        # Anos iniciais:
+        # LP: 49 a 324 | Matemática: 60 a 322
+        # Anos finais:
+        # LP: 100 a 400 | Matemática: 100 a 400
+        #
+        # O cálculo é vetorizado e feito uma única vez no cache.
+        # ----------------------------------------------------
+        mask_fi = df["Etapa"].eq("Fundamental I")
+        mask_fii = df["Etapa"].eq("Fundamental II")
+
+        df["Nota Padronizada LP"] = np.nan
+        df["Nota Padronizada Matemática"] = np.nan
+
+        df.loc[mask_fi, "Nota Padronizada LP"] = (
+            (df.loc[mask_fi, "Língua Portuguesa"] - 49.0)
+            / (324.0 - 49.0)
+            * 10.0
+        )
+        df.loc[mask_fi, "Nota Padronizada Matemática"] = (
+            (df.loc[mask_fi, "Matemática"] - 60.0)
+            / (322.0 - 60.0)
+            * 10.0
+        )
+
+        df.loc[mask_fii, "Nota Padronizada LP"] = (
+            (df.loc[mask_fii, "Língua Portuguesa"] - 100.0)
+            / (400.0 - 100.0)
+            * 10.0
+        )
+        df.loc[mask_fii, "Nota Padronizada Matemática"] = (
+            (df.loc[mask_fii, "Matemática"] - 100.0)
+            / (400.0 - 100.0)
+            * 10.0
+        )
+
+        df["Nota Padronizada LP"] = df["Nota Padronizada LP"].clip(0, 10)
+        df["Nota Padronizada Matemática"] = (
+            df["Nota Padronizada Matemática"].clip(0, 10)
+        )
+
     inv["Investimento por Estudante"] = pd.to_numeric(
         inv["Investimento por Estudante"], errors="coerce"
     )
@@ -1466,6 +1512,61 @@ def cards_movimento(comp):
             unsafe_allow_html=True
         )
 
+def grafico_notas_padronizadas_componentes(df, titulo):
+    """
+    LP e Matemática já na mesma escala 0–10.
+    A linha N mostra a média padronizada usada no IDEB.
+    """
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["Nota Padronizada LP"],
+        mode="lines+markers+text",
+        name="LP padronizada",
+        text=[
+            fmt(v, 2) if pd.notna(v) else ""
+            for v in df["Nota Padronizada LP"]
+        ],
+        textposition="top center",
+        line=dict(color=ROSA, width=3),
+        marker=dict(size=8)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["Nota Padronizada Matemática"],
+        mode="lines+markers+text",
+        name="Matemática padronizada",
+        text=[
+            fmt(v, 2) if pd.notna(v) else ""
+            for v in df["Nota Padronizada Matemática"]
+        ],
+        textposition="bottom center",
+        line=dict(color=LILAS, width=3),
+        marker=dict(size=8)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["N"],
+        mode="lines+markers",
+        name="N — média padronizada",
+        line=dict(color=LARANJA, width=2, dash="dot"),
+        marker=dict(size=7)
+    ))
+
+    estilo_fig(
+        fig,
+        titulo,
+        "Nota padronizada (0–10)",
+        480
+    )
+    fig.update_yaxes(range=[0, 10])
+
+    return fig
+
+
 def grafico_composicao_ideb_temporal(df, titulo):
     """
     Para uma MESMA unidade ao longo do tempo:
@@ -1533,7 +1634,13 @@ def tabela_composicao_unidades(rows):
 
     out = pd.DataFrame(rows).copy()
 
-    for col in ["N", "P", "IDEB"]:
+    for col in [
+        "Nota Padronizada LP",
+        "Nota Padronizada Matemática",
+        "N",
+        "P",
+        "IDEB"
+    ]:
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce")
 
@@ -1551,11 +1658,15 @@ def cards_composicao_ideb(trans, coluna_nome):
         st.markdown(
             f'<div class="metric-card" style="margin-bottom:10px;">'
             f'<div class="metric-label">{r[coluna_nome]}</div>'
-            f'<div class="metric-value" style="font-size:22px;">'
+            f'<div class="metric-value" style="font-size:19px;">'
+            f'LP {fmt(r.get("Nota Padronizada LP"),2)} + '
+            f'MAT {fmt(r.get("Nota Padronizada Matemática"),2)} '
+            f'→ N {fmt(r.get("N"),2)}</div>'
+            f'<div style="font-size:18px;font-weight:750;margin-top:7px;">'
             f'N {fmt(r.get("N"),2)} × P {fmt(r.get("P"),3)} '
             f'→ IDEB {fmt(r.get("IDEB"),1)}</div>'
-            f'<div class="metric-foot">N = aprendizagem padronizada • '
-            f'P = rendimento • IDEB = combinação dos dois componentes</div>'
+            f'<div class="metric-foot">LP e Matemática estão padronizadas na escala 0–10; '
+            f'N é a média das duas notas padronizadas.</div>'
             f'</div>',
             unsafe_allow_html=True
         )
@@ -1582,6 +1693,20 @@ RANKING_INDICADORES = {
         "nivel": "Nível Matemática",
         "padrao": "Padrão Matemática",
         "rotulo": "Matemática",
+    },
+    "Nota Padronizada LP (0–10)": {
+        "coluna": "Nota Padronizada LP",
+        "casas": 2,
+        "nivel": None,
+        "padrao": None,
+        "rotulo": "Nota padronizada LP",
+    },
+    "Nota Padronizada Matemática (0–10)": {
+        "coluna": "Nota Padronizada Matemática",
+        "casas": 2,
+        "nivel": None,
+        "padrao": None,
+        "rotulo": "Nota padronizada Matemática",
     },
     "Nota Média Padronizada (N)": {
         "coluna": "N",
@@ -2571,6 +2696,8 @@ if pagina == "Visão da rede":
             "IDEB",
             "Língua Portuguesa",
             "Matemática",
+            "LP padronizada",
+            "MAT padronizada",
             "Aprovação",
             "N",
             "P"
@@ -2610,6 +2737,26 @@ if pagina == "Visão da rede":
         with tabs_comp[3]:
             st.plotly_chart(
                 grafico_comparacao_etapas(
+                    fi, fii, "Nota Padronizada LP",
+                    f"LP padronizada (0–10) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
+                    casas=2
+                ),
+                use_container_width=True
+            )
+
+        with tabs_comp[4]:
+            st.plotly_chart(
+                grafico_comparacao_etapas(
+                    fi, fii, "Nota Padronizada Matemática",
+                    f"Matemática padronizada (0–10) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
+                    casas=2
+                ),
+                use_container_width=True
+            )
+
+        with tabs_comp[5]:
+            st.plotly_chart(
+                grafico_comparacao_etapas(
                     fi, fii, "Aprovação Geral",
                     f"Aprovação Geral — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
                     casas=1
@@ -2617,7 +2764,7 @@ if pagina == "Visão da rede":
                 use_container_width=True
             )
 
-        with tabs_comp[4]:
+        with tabs_comp[6]:
             st.plotly_chart(
                 grafico_comparacao_etapas(
                     fi, fii, "N",
@@ -2627,7 +2774,7 @@ if pagina == "Visão da rede":
                 use_container_width=True
             )
 
-        with tabs_comp[5]:
+        with tabs_comp[7]:
             st.plotly_chart(
                 grafico_comparacao_etapas(
                     fi, fii, "P",
@@ -2665,6 +2812,14 @@ if pagina == "Visão da rede":
             'O indicador P é mostrado separadamente para não distorcer a leitura. '
             'Como se trata da mesma rede ao longo dos anos, a linha representa evolução temporal.</div>',
             unsafe_allow_html=True
+        )
+
+        st.plotly_chart(
+            grafico_notas_padronizadas_componentes(
+                d,
+                f"LP e Matemática padronizadas (0–10) — {etapa}"
+            ),
+            use_container_width=True
         )
 
         st.plotly_chart(
@@ -2978,6 +3133,8 @@ elif pagina == "Escolas":
                         "IDEB",
                         "Língua Portuguesa",
                         "Matemática",
+                        "LP padronizada",
+                        "MAT padronizada",
                         "Aprovação",
                         "N",
                         "P"
@@ -2987,6 +3144,8 @@ elif pagina == "Escolas":
                         ("IDEB", 1, True),
                         ("Língua Portuguesa", 1, False),
                         ("Matemática", 1, False),
+                        ("Nota Padronizada LP", 2, False),
+                        ("Nota Padronizada Matemática", 2, False),
                         ("Aprovação Geral", 1, False),
                         ("N", 2, False),
                         ("P", 3, False),
@@ -3886,6 +4045,8 @@ elif pagina == "Território":
                 r_np = d_np.iloc[-1]
                 rows.append({
                     "Município": nome_exibido,
+                    "Nota Padronizada LP": r_np.get("Nota Padronizada LP"),
+                    "Nota Padronizada Matemática": r_np.get("Nota Padronizada Matemática"),
                     "N": r_np.get("N"),
                     "P": r_np.get("P"),
                     "IDEB": r_np.get("IDEB")
@@ -3902,6 +4063,14 @@ elif pagina == "Território":
             )
 
             tabela_np = trans.copy()
+            tabela_np["Nota Padronizada LP"] = tabela_np["Nota Padronizada LP"].map(
+                lambda v: fmt(v,2) if pd.notna(v) else "—"
+            )
+            tabela_np["Nota Padronizada Matemática"] = (
+                tabela_np["Nota Padronizada Matemática"].map(
+                    lambda v: fmt(v,2) if pd.notna(v) else "—"
+                )
+            )
             tabela_np["N"] = tabela_np["N"].map(
                 lambda v: fmt(v,2) if pd.notna(v) else "—"
             )
