@@ -1627,8 +1627,14 @@ def comp_ranking_municipios_indicador(
         etapa, ano_fim, indicador_label, rede_comparacao
     )
 
-    cols_ini = ["Município", "Rede", coluna, "IDEB", "Posição"]
-    cols_fim = ["Município", "Rede", coluna, "IDEB", "Posição"]
+    cols_ini = ["Município", "Rede", coluna, "Posição"]
+    cols_fim = ["Município", "Rede", coluna, "Posição"]
+
+    # IDEB deve aparecer também como informação auxiliar, mas sem
+    # duplicar a coluna quando o próprio ranking já é por IDEB.
+    if coluna != "IDEB":
+        cols_ini.append("IDEB")
+        cols_fim.append("IDEB")
 
     if nivel_col:
         cols_ini.append(nivel_col)
@@ -1643,7 +1649,7 @@ def comp_ranking_municipios_indicador(
     ini = ini.rename(columns={
         "Rede": "Rede Inicial",
         coluna: "Resultado Inicial",
-        "IDEB": "IDEB Inicial",
+        **({"IDEB": "IDEB Inicial"} if coluna != "IDEB" else {}),
         "Posição": "Posição Inicial",
         **({nivel_col: "Nível Inicial"} if nivel_col else {}),
         **({padrao_col: "Padrão Inicial"} if padrao_col else {}),
@@ -1652,11 +1658,15 @@ def comp_ranking_municipios_indicador(
     fim = fim.rename(columns={
         "Rede": "Rede Atual",
         coluna: "Resultado Atual",
-        "IDEB": "IDEB Atual",
+        **({"IDEB": "IDEB Atual"} if coluna != "IDEB" else {}),
         "Posição": "Posição Atual",
         **({nivel_col: "Nível Atual"} if nivel_col else {}),
         **({padrao_col: "Padrão Atual"} if padrao_col else {}),
     })
+
+    if coluna == "IDEB":
+        ini["IDEB Inicial"] = ini["Resultado Inicial"]
+        fim["IDEB Atual"] = fim["Resultado Atual"]
 
     comp = fim.merge(ini, on="Município", how="left")
     comp["Variação de Posição"] = comp["Posição Inicial"] - comp["Posição Atual"]
@@ -1682,8 +1692,12 @@ def comp_ranking_escolas_indicador(
     ini = ranking_base_escolas_indicador(etapa, ano_ini, indicador_label)
     fim = ranking_base_escolas_indicador(etapa, ano_fim, indicador_label)
 
-    cols_ini = ["Escola", coluna, "IDEB", "Posição"]
-    cols_fim = ["Escola", coluna, "IDEB", "Posição"]
+    cols_ini = ["Escola", coluna, "Posição"]
+    cols_fim = ["Escola", coluna, "Posição"]
+
+    if coluna != "IDEB":
+        cols_ini.append("IDEB")
+        cols_fim.append("IDEB")
 
     if nivel_col:
         cols_ini.append(nivel_col)
@@ -1697,7 +1711,7 @@ def comp_ranking_escolas_indicador(
 
     ini = ini.rename(columns={
         coluna: "Resultado Inicial",
-        "IDEB": "IDEB Inicial",
+        **({"IDEB": "IDEB Inicial"} if coluna != "IDEB" else {}),
         "Posição": "Posição Inicial",
         **({nivel_col: "Nível Inicial"} if nivel_col else {}),
         **({padrao_col: "Padrão Inicial"} if padrao_col else {}),
@@ -1705,11 +1719,15 @@ def comp_ranking_escolas_indicador(
 
     fim = fim.rename(columns={
         coluna: "Resultado Atual",
-        "IDEB": "IDEB Atual",
+        **({"IDEB": "IDEB Atual"} if coluna != "IDEB" else {}),
         "Posição": "Posição Atual",
         **({nivel_col: "Nível Atual"} if nivel_col else {}),
         **({padrao_col: "Padrão Atual"} if padrao_col else {}),
     })
+
+    if coluna == "IDEB":
+        ini["IDEB Inicial"] = ini["Resultado Inicial"]
+        fim["IDEB Atual"] = fim["Resultado Atual"]
 
     comp = fim.merge(ini, on="Escola", how="left")
     comp["Variação de Posição"] = comp["Posição Inicial"] - comp["Posição Atual"]
@@ -1836,11 +1854,14 @@ def ranking_selecionados_municipios(
             if x.empty:
                 continue
             r = x.sort_values(coluna, ascending=False).iloc[0]
+            resultado_val = r.get(coluna)
+            ideb_val = resultado_val if coluna == "IDEB" else r.get("IDEB")
+
             rows.append({
                 "Município": nome,
                 "Rede": "Municipal (referência)" if nome == "Barueri" else rede,
-                "Resultado": r.get(coluna),
-                "IDEB": r.get("IDEB"),
+                "Resultado": resultado_val,
+                "IDEB": ideb_val,
                 "Nível": r.get(nivel_col) if nivel_col else pd.NA,
                 "Padrão": r.get(padrao_col) if padrao_col else pd.NA,
             })
