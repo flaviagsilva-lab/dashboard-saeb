@@ -1242,9 +1242,8 @@ def historico_rede_barueri(etapa):
 
 def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
     """
-    Escala visual por níveis, com marcador do resultado atual.
-    A altura e as margens foram ampliadas para que o valor e a seta
-    apareçam integralmente em telas menores.
+    Escala visual por níveis. O resultado fica abaixo da barra,
+    evitando cobrir os níveis da escala.
     """
     coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
     valor = row.get(coluna)
@@ -1252,6 +1251,7 @@ def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
 
     faixas = FAIXAS_NIVEIS[etapa]
     niveis = [n for n, _ in faixas]
+    maxn = max(niveis) if niveis else 1
 
     fig = go.Figure()
 
@@ -1266,18 +1266,45 @@ def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
         text=[str(n) for n in niveis],
         textposition="inside",
         insidetextanchor="middle",
-        hoverinfo="skip",
+        hovertext=[
+            f"Nível {n} • {faixa}"
+            for n, faixa in faixas
+        ],
+        hovertemplate="%{hovertext}<extra></extra>",
         showlegend=False
     ))
 
+    if pd.notna(valor) and pd.notna(nivel):
+        n = int(float(nivel))
+        xpos = (n + .5) / (maxn + 1)
+
+        # Linha discreta aponta para a posição; o rótulo fica abaixo.
+        fig.add_shape(
+            type="line",
+            x0=xpos, x1=xpos,
+            y0=.38, y1=.60,
+            xref="paper", yref="paper",
+            line=dict(color="#0E5A70", width=3)
+        )
+
+        fig.add_annotation(
+            x=xpos,
+            y=.03,
+            xref="paper",
+            yref="paper",
+            text=f"<b>{fmt(valor,2)}</b> • Nível {n}",
+            showarrow=False,
+            bgcolor="#0E5A70",
+            bordercolor="#0E5A70",
+            borderpad=6,
+            font=dict(color="white", size=11)
+        )
+
     fig.update_layout(
         barmode="stack",
-        height=255,
-        margin=dict(l=20, r=20, t=52, b=82),
-        xaxis=dict(
-            visible=False,
-            range=[0, len(niveis)]
-        ),
+        height=210,
+        margin=dict(l=20, r=20, t=40, b=55),
+        xaxis=dict(visible=False),
         yaxis=dict(visible=False),
         paper_bgcolor="white",
         plot_bgcolor="white",
@@ -1288,29 +1315,6 @@ def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
             font=dict(size=16)
         )
     )
-
-    if pd.notna(valor) and pd.notna(nivel):
-        n = int(float(nivel))
-        maxn = max(niveis) if niveis else 1
-
-        # posição central da célula do nível
-        xpos = (n + 0.5) / (maxn + 1)
-
-        fig.add_annotation(
-            x=xpos,
-            y=-0.02,
-            xref="paper",
-            yref="paper",
-            text=f"<b>{fmt(valor,2)}</b><br>Nível {n}",
-            showarrow=True,
-            arrowhead=2,
-            ax=0,
-            ay=-42,
-            bgcolor="#0E5A70",
-            font=dict(color="white", size=11),
-            bordercolor="#0E5A70",
-            borderpad=4
-        )
 
     return fig
 
@@ -1413,82 +1417,6 @@ def fig_matriz_nivel_tendencia(df, entidade, disciplina, ano_ini, ano_fim, etapa
     fig.update_yaxes(gridcolor="#EDF1F4")
     return fig, comp
 
-
-def grafico_comparacao_etapas_escola(df_fi, df_fii, indicador, escola, casas=2):
-    """
-    Compara Fundamental I e Fundamental II da mesma escola no mesmo gráfico.
-    """
-    fig = go.Figure()
-
-    if not df_fi.empty and indicador in df_fi.columns:
-        fig.add_trace(go.Scatter(
-            x=df_fi["Ano"],
-            y=df_fi[indicador],
-            mode="lines+markers+text",
-            name=f"Fundamental I — {indicador}",
-            text=[
-                fmt(v, casas) if pd.notna(v) else ""
-                for v in df_fi[indicador]
-            ],
-            textposition="top center",
-            line=dict(color=AZUL, width=3),
-            marker=dict(size=8)
-        ))
-
-    if not df_fii.empty and indicador in df_fii.columns:
-        fig.add_trace(go.Scatter(
-            x=df_fii["Ano"],
-            y=df_fii[indicador],
-            mode="lines+markers+text",
-            name=f"Fundamental II — {indicador}",
-            text=[
-                fmt(v, casas) if pd.notna(v) else ""
-                for v in df_fii[indicador]
-            ],
-            textposition="bottom center",
-            line=dict(color=LILAS, width=3),
-            marker=dict(size=8)
-        ))
-
-    ytitle = (
-        "Taxa de aprovação (%)"
-        if indicador == "Aprovação Geral"
-        else indicador
-    )
-
-    fig = estilo_fig(
-        fig,
-        f"{escola} — Fundamental I × Fundamental II — {indicador}",
-        ytitle,
-        505
-    )
-
-    if indicador == "Aprovação Geral":
-        fig.update_yaxes(range=[0, 105])
-
-    return fig
-
-
-def escolas_com_duas_etapas():
-    """
-    Retorna escolas que possuem registros em Fundamental I e Fundamental II.
-    """
-    etapas_por_escola = (
-        escolas[["Escola", "Etapa"]]
-        .dropna()
-        .drop_duplicates()
-        .groupby("Escola")["Etapa"]
-        .agg(set)
-    )
-
-    nomes = [
-        nome
-        for nome, etapas in etapas_por_escola.items()
-        if {"Fundamental I", "Fundamental II"}.issubset(etapas)
-    ]
-
-    return sorted(nomes)
-
 def cards_movimento(comp):
     total = len(comp)
     avanc = int((comp["Tendência"] == "Avanço").sum())
@@ -1512,6 +1440,532 @@ def cards_movimento(comp):
             f'</div>',
             unsafe_allow_html=True
         )
+
+def grafico_composicao_ideb_temporal(df, titulo):
+    """
+    Para uma MESMA unidade ao longo do tempo:
+    N e IDEB juntos; P em gráfico próprio.
+    """
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["N"],
+        mode="lines+markers+text",
+        name="N",
+        text=[fmt(v,2) if pd.notna(v) else "" for v in df["N"]],
+        textposition="top center",
+        line=dict(color=ROSA, width=3),
+        marker=dict(size=8)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["IDEB"],
+        mode="lines+markers+text",
+        name="IDEB",
+        text=[fmt(v,1) if pd.notna(v) else "" for v in df["IDEB"]],
+        textposition="bottom center",
+        line=dict(color=LARANJA, width=3),
+        marker=dict(size=8)
+    ))
+
+    return estilo_fig(
+        fig,
+        titulo,
+        "Nota Média Padronizada (N) / IDEB",
+        460
+    )
+
+def grafico_p_temporal(df, titulo):
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=df["Ano"],
+        y=df["P"],
+        mode="lines+markers+text",
+        name="P",
+        text=[fmt(v,3) if pd.notna(v) else "" for v in df["P"]],
+        textposition="top center",
+        line=dict(color=LILAS_P, width=3),
+        marker=dict(size=8)
+    ))
+
+    return estilo_fig(
+        fig,
+        titulo,
+        "Indicador de Rendimento (P)",
+        390
+    )
+
+def tabela_composicao_unidades(rows):
+    """
+    Comparação transversal: cada município/escola é uma observação
+    independente. Não cria linhas entre unidades.
+    """
+    if not rows:
+        return pd.DataFrame()
+
+    out = pd.DataFrame(rows).copy()
+
+    for col in ["N", "P", "IDEB"]:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+
+    return out
+
+def cards_composicao_ideb(trans, coluna_nome):
+    """
+    Exibe N × P → IDEB por unidade, sem sugerir sequência entre elas.
+    """
+    if trans.empty:
+        st.info("Não há dados suficientes para a composição do IDEB.")
+        return
+
+    for _, r in trans.iterrows():
+        st.markdown(
+            f'<div class="metric-card" style="margin-bottom:10px;">'
+            f'<div class="metric-label">{r[coluna_nome]}</div>'
+            f'<div class="metric-value" style="font-size:22px;">'
+            f'N {fmt(r.get("N"),2)} × P {fmt(r.get("P"),3)} '
+            f'→ IDEB {fmt(r.get("IDEB"),1)}</div>'
+            f'<div class="metric-foot">N = aprendizagem padronizada • '
+            f'P = rendimento • IDEB = combinação dos dois componentes</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+
+RANKING_INDICADORES = {
+    "IDEB": {
+        "coluna": "IDEB",
+        "casas": 1,
+        "nivel": None,
+        "padrao": None,
+        "rotulo": "IDEB",
+    },
+    "Língua Portuguesa (SAEB)": {
+        "coluna": "Língua Portuguesa",
+        "casas": 1,
+        "nivel": "Nível Língua Portuguesa",
+        "padrao": "Padrão Língua Portuguesa",
+        "rotulo": "Língua Portuguesa",
+    },
+    "Matemática (SAEB)": {
+        "coluna": "Matemática",
+        "casas": 1,
+        "nivel": "Nível Matemática",
+        "padrao": "Padrão Matemática",
+        "rotulo": "Matemática",
+    },
+    "Nota Média Padronizada (N)": {
+        "coluna": "N",
+        "casas": 2,
+        "nivel": None,
+        "padrao": None,
+        "rotulo": "N",
+    },
+}
+
+def ranking_base_municipios_indicador(etapa, ano, indicador_label, rede):
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+
+    x = municipios[
+        (municipios["Etapa"] == etapa) &
+        (municipios["Ano"] == ano) &
+        (municipios["Rede"] == rede)
+    ].copy()
+
+    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
+    x["IDEB"] = pd.to_numeric(x["IDEB"], errors="coerce")
+    x = x.dropna(subset=[coluna])
+
+    x = (
+        x.sort_values(["Município", coluna], ascending=[True, False])
+        .drop_duplicates("Município", keep="first")
+        .copy()
+    )
+
+    x["Posição"] = x[coluna].rank(method="min", ascending=False).astype("Int64")
+    return x.sort_values(["Posição", "Município"]).reset_index(drop=True)
+
+def ranking_base_escolas_indicador(etapa, ano, indicador_label):
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+
+    x = escolas[
+        (escolas["Etapa"] == etapa) &
+        (escolas["Ano"] == ano)
+    ].copy()
+
+    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
+    x["IDEB"] = pd.to_numeric(x["IDEB"], errors="coerce")
+    x = x.dropna(subset=[coluna])
+
+    x = (
+        x.sort_values(["Escola", coluna], ascending=[True, False])
+        .drop_duplicates("Escola", keep="first")
+        .copy()
+    )
+
+    x["Posição"] = x[coluna].rank(method="min", ascending=False).astype("Int64")
+    return x.sort_values(["Posição", "Escola"]).reset_index(drop=True)
+
+def comp_ranking_municipios_indicador(
+    etapa, indicador_label, ano_ini, ano_fim, rede_comparacao
+):
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+    nivel_col = cfg["nivel"]
+    padrao_col = cfg["padrao"]
+
+    ini = ranking_base_municipios_indicador(
+        etapa, ano_ini, indicador_label, rede_comparacao
+    )
+    fim = ranking_base_municipios_indicador(
+        etapa, ano_fim, indicador_label, rede_comparacao
+    )
+
+    cols_ini = ["Município", "Rede", coluna, "IDEB", "Posição"]
+    cols_fim = ["Município", "Rede", coluna, "IDEB", "Posição"]
+
+    if nivel_col:
+        cols_ini.append(nivel_col)
+        cols_fim.append(nivel_col)
+    if padrao_col:
+        cols_ini.append(padrao_col)
+        cols_fim.append(padrao_col)
+
+    ini = ini[cols_ini].copy()
+    fim = fim[cols_fim].copy()
+
+    ini = ini.rename(columns={
+        "Rede": "Rede Inicial",
+        coluna: "Resultado Inicial",
+        "IDEB": "IDEB Inicial",
+        "Posição": "Posição Inicial",
+        **({nivel_col: "Nível Inicial"} if nivel_col else {}),
+        **({padrao_col: "Padrão Inicial"} if padrao_col else {}),
+    })
+
+    fim = fim.rename(columns={
+        "Rede": "Rede Atual",
+        coluna: "Resultado Atual",
+        "IDEB": "IDEB Atual",
+        "Posição": "Posição Atual",
+        **({nivel_col: "Nível Atual"} if nivel_col else {}),
+        **({padrao_col: "Padrão Atual"} if padrao_col else {}),
+    })
+
+    comp = fim.merge(ini, on="Município", how="left")
+    comp["Variação de Posição"] = comp["Posição Inicial"] - comp["Posição Atual"]
+    comp["Movimento"] = comp["Variação de Posição"].apply(texto_movimento)
+
+    if "Nível Atual" not in comp.columns:
+        comp["Nível Atual"] = pd.NA
+        comp["Nível Inicial"] = pd.NA
+    if "Padrão Atual" not in comp.columns:
+        comp["Padrão Atual"] = pd.NA
+        comp["Padrão Inicial"] = pd.NA
+
+    return comp.sort_values(["Posição Atual", "Município"]).reset_index(drop=True)
+
+def comp_ranking_escolas_indicador(
+    etapa, indicador_label, ano_ini, ano_fim
+):
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+    nivel_col = cfg["nivel"]
+    padrao_col = cfg["padrao"]
+
+    ini = ranking_base_escolas_indicador(etapa, ano_ini, indicador_label)
+    fim = ranking_base_escolas_indicador(etapa, ano_fim, indicador_label)
+
+    cols_ini = ["Escola", coluna, "IDEB", "Posição"]
+    cols_fim = ["Escola", coluna, "IDEB", "Posição"]
+
+    if nivel_col:
+        cols_ini.append(nivel_col)
+        cols_fim.append(nivel_col)
+    if padrao_col:
+        cols_ini.append(padrao_col)
+        cols_fim.append(padrao_col)
+
+    ini = ini[cols_ini].copy()
+    fim = fim[cols_fim].copy()
+
+    ini = ini.rename(columns={
+        coluna: "Resultado Inicial",
+        "IDEB": "IDEB Inicial",
+        "Posição": "Posição Inicial",
+        **({nivel_col: "Nível Inicial"} if nivel_col else {}),
+        **({padrao_col: "Padrão Inicial"} if padrao_col else {}),
+    })
+
+    fim = fim.rename(columns={
+        coluna: "Resultado Atual",
+        "IDEB": "IDEB Atual",
+        "Posição": "Posição Atual",
+        **({nivel_col: "Nível Atual"} if nivel_col else {}),
+        **({padrao_col: "Padrão Atual"} if padrao_col else {}),
+    })
+
+    comp = fim.merge(ini, on="Escola", how="left")
+    comp["Variação de Posição"] = comp["Posição Inicial"] - comp["Posição Atual"]
+    comp["Movimento"] = comp["Variação de Posição"].apply(texto_movimento)
+
+    if "Nível Atual" not in comp.columns:
+        comp["Nível Atual"] = pd.NA
+        comp["Nível Inicial"] = pd.NA
+    if "Padrão Atual" not in comp.columns:
+        comp["Padrão Atual"] = pd.NA
+        comp["Padrão Inicial"] = pd.NA
+
+    return comp.sort_values(["Posição Atual", "Escola"]).reset_index(drop=True)
+
+def adicionar_barueri_indicador(
+    comp, etapa, indicador_label, ano_ini, ano_fim, rede_comparacao
+):
+    """
+    Barueri permanece Municipal e entra como referência no universo
+    da rede selecionada.
+    """
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+    nivel_col = cfg["nivel"]
+    padrao_col = cfg["padrao"]
+
+    def linha_barueri(ano):
+        x = municipios[
+            (municipios["Município"] == "Barueri") &
+            (municipios["Rede"] == "Municipal") &
+            (municipios["Etapa"] == etapa) &
+            (municipios["Ano"] == ano)
+        ].copy()
+        if x.empty:
+            return None
+        x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
+        x = x.dropna(subset=[coluna])
+        if x.empty:
+            return None
+        return x.sort_values(coluna, ascending=False).iloc[0]
+
+    bi = linha_barueri(ano_ini)
+    bf = linha_barueri(ano_fim)
+    if bf is None:
+        return comp
+
+    rank_ini = ranking_base_municipios_indicador(
+        etapa, ano_ini, indicador_label, rede_comparacao
+    )
+    rank_fim = ranking_base_municipios_indicador(
+        etapa, ano_fim, indicador_label, rede_comparacao
+    )
+
+    pos_ini = (
+        int((pd.to_numeric(rank_ini[coluna], errors="coerce") > float(bi[coluna])).sum() + 1)
+        if bi is not None else pd.NA
+    )
+    pos_fim = int(
+        (pd.to_numeric(rank_fim[coluna], errors="coerce") > float(bf[coluna])).sum() + 1
+    )
+
+    variacao = (
+        pos_ini - pos_fim
+        if pd.notna(pos_ini) and pd.notna(pos_fim)
+        else pd.NA
+    )
+
+    linha = {
+        "Município": "Barueri",
+        "Rede Atual": "Municipal (referência)",
+        "Rede Inicial": "Municipal (referência)",
+        "Resultado Atual": bf.get(coluna),
+        "Resultado Inicial": bi.get(coluna) if bi is not None else pd.NA,
+        "IDEB Atual": bf.get("IDEB"),
+        "IDEB Inicial": bi.get("IDEB") if bi is not None else pd.NA,
+        "Posição Atual": pos_fim,
+        "Posição Inicial": pos_ini,
+        "Variação de Posição": variacao,
+        "Movimento": texto_movimento(variacao),
+        "Nível Atual": bf.get(nivel_col) if nivel_col else pd.NA,
+        "Nível Inicial": bi.get(nivel_col) if (nivel_col and bi is not None) else pd.NA,
+        "Padrão Atual": bf.get(padrao_col) if padrao_col else pd.NA,
+        "Padrão Inicial": bi.get(padrao_col) if (padrao_col and bi is not None) else pd.NA,
+        "_Referencia": True,
+    }
+
+    out = comp.copy()
+    out["_Referencia"] = False
+    out = out[out["Município"] != "Barueri"]
+    out = pd.concat([out, pd.DataFrame([linha])], ignore_index=True)
+    return out.sort_values(["Posição Atual", "Município"]).reset_index(drop=True)
+
+def ranking_selecionados_municipios(
+    nomes, etapa, indicador_label, ano_ini, ano_fim, rede_comparacao
+):
+    """
+    Ranking recalculado SOMENTE entre os municípios selecionados.
+    Barueri é sempre Municipal; os demais usam a rede escolhida.
+    """
+    nomes_finais = []
+    for nome in ["Barueri"] + list(nomes):
+        if nome not in nomes_finais:
+            nomes_finais.append(nome)
+
+    cfg = RANKING_INDICADORES[indicador_label]
+    coluna = cfg["coluna"]
+    nivel_col = cfg["nivel"]
+    padrao_col = cfg["padrao"]
+
+    def montar_ano(ano):
+        rows = []
+        for nome in nomes_finais:
+            rede = "Municipal" if nome == "Barueri" else rede_comparacao
+            x = municipios[
+                (municipios["Município"] == nome) &
+                (municipios["Rede"] == rede) &
+                (municipios["Etapa"] == etapa) &
+                (municipios["Ano"] == ano)
+            ].copy()
+            if x.empty:
+                continue
+            x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
+            x = x.dropna(subset=[coluna])
+            if x.empty:
+                continue
+            r = x.sort_values(coluna, ascending=False).iloc[0]
+            rows.append({
+                "Município": nome,
+                "Rede": "Municipal (referência)" if nome == "Barueri" else rede,
+                "Resultado": r.get(coluna),
+                "IDEB": r.get("IDEB"),
+                "Nível": r.get(nivel_col) if nivel_col else pd.NA,
+                "Padrão": r.get(padrao_col) if padrao_col else pd.NA,
+            })
+
+        out = pd.DataFrame(rows)
+        if out.empty:
+            return out
+        out["Posição"] = (
+            pd.to_numeric(out["Resultado"], errors="coerce")
+            .rank(method="min", ascending=False)
+            .astype("Int64")
+        )
+        return out
+
+    ini = montar_ano(ano_ini)
+    fim = montar_ano(ano_fim)
+    if fim.empty:
+        return pd.DataFrame()
+
+    ini = ini.rename(columns={
+        "Rede": "Rede Inicial",
+        "Resultado": "Resultado Inicial",
+        "IDEB": "IDEB Inicial",
+        "Nível": "Nível Inicial",
+        "Padrão": "Padrão Inicial",
+        "Posição": "Posição Inicial",
+    })
+    fim = fim.rename(columns={
+        "Rede": "Rede Atual",
+        "Resultado": "Resultado Atual",
+        "IDEB": "IDEB Atual",
+        "Nível": "Nível Atual",
+        "Padrão": "Padrão Atual",
+        "Posição": "Posição Atual",
+    })
+
+    comp = fim.merge(ini, on="Município", how="left")
+    comp["Variação de Posição"] = comp["Posição Inicial"] - comp["Posição Atual"]
+    comp["Movimento"] = comp["Variação de Posição"].apply(texto_movimento)
+    comp["_Referencia"] = comp["Município"].eq("Barueri")
+    return comp.sort_values(["Posição Atual", "Município"]).reset_index(drop=True)
+
+def cor_movimento(valor):
+    if pd.isna(valor):
+        return "#6B7280"
+    if valor > 0:
+        return "#2E8B57"
+    if valor < 0:
+        return "#B83A3A"
+    return "#6B7280"
+
+def tabela_visual_ranking(
+    comp,
+    entidade,
+    indicador_label,
+    quantidade="Todos",
+    destaque_barueri=False
+):
+    """
+    Ranking com aparência de tabela: cada unidade ocupa uma linha,
+    e as informações ficam organizadas em colunas.
+    """
+    chave = "Município" if entidade == "Município" else "Escola"
+    cfg = RANKING_INDICADORES[indicador_label]
+
+    base = comp.copy()
+
+    if quantidade != "Todos":
+        if entidade == "Município" and "_Referencia" in base.columns:
+            ref = base[base["_Referencia"] == True]
+            outros = base[base["_Referencia"] != True].head(int(quantidade))
+            base = pd.concat([outros, ref], ignore_index=True)
+        else:
+            base = base.head(int(quantidade))
+
+    base = base.drop_duplicates(chave).sort_values(["Posição Atual", chave])
+
+    for _, r in base.iterrows():
+        movimento = r.get("Movimento", "—")
+        cor_mov = cor_movimento(r.get("Variação de Posição"))
+
+        nivel_txt = ""
+        if pd.notna(r.get("Nível Atual")):
+            nivel_txt = f'Nível {int(float(r.get("Nível Atual")))}'
+            if pd.notna(r.get("Padrão Atual")):
+                nivel_txt += f' • {r.get("Padrão Atual")}'
+
+        cor_nivel = "#E5E7EB"
+        if pd.notna(r.get("Nível Atual")):
+            cor_nivel = cores_niveis(
+                st.session_state.get("rank_m_etapa")
+                if entidade == "Município"
+                else st.session_state.get("rank_e_etapa")
+            ).get(int(float(r.get("Nível Atual"))), "#E5E7EB")
+
+        destaque = (
+            "border:2px solid #0E5A70;"
+            if destaque_barueri and r[chave] == "Barueri"
+            else "border:1px solid #E5E7EB;"
+        )
+
+        st.markdown(
+            f'<div style="{destaque}background:white;border-radius:12px;'
+            f'padding:12px 14px;margin-bottom:8px;display:grid;'
+            f'grid-template-columns:72px minmax(190px,2fr) 115px 115px 115px minmax(150px,1.4fr);'
+            f'gap:12px;align-items:center;">'
+            f'<div><div class="metric-label">Posição</div>'
+            f'<div style="font-size:23px;font-weight:800;">{int(r["Posição Atual"])}º</div></div>'
+            f'<div><div class="metric-label">{entidade}</div>'
+            f'<div style="font-size:15px;font-weight:750;">{r[chave]}</div>'
+            f'<div style="font-size:11px;color:#6B7280;">{r.get("Rede Atual","")}</div></div>'
+            f'<div><div class="metric-label">{cfg["rotulo"]}</div>'
+            f'<div style="font-size:17px;font-weight:750;">{fmt(r.get("Resultado Atual"),cfg["casas"])}</div></div>'
+            f'<div><div class="metric-label">IDEB</div>'
+            f'<div style="font-size:17px;font-weight:750;">{fmt(r.get("IDEB Atual"),1)}</div></div>'
+            f'<div><div class="metric-label">Movimento</div>'
+            f'<div style="font-size:16px;font-weight:800;color:{cor_mov};">{movimento}</div>'
+            f'<div style="font-size:11px;color:#6B7280;">de {fmt(r.get("Posição Inicial"),0)}º</div></div>'
+            f'<div><div class="metric-label">Classificação</div>'
+            f'<div style="font-size:13px;font-weight:700;">{nivel_txt or "—"}</div>'
+            f'<div style="height:5px;border-radius:4px;background:{cor_nivel};margin-top:6px;"></div></div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
 def cards_rede(row):
     itens = [
         ("IDEB", row.get("IDEB"), 1, ""),
@@ -1669,8 +2123,8 @@ if pagina == "Visão da rede":
             unsafe_allow_html=True
         )
 
-        base_fi = dados_municipio("Barueri", "Fundamental I")
-        base_fii = dados_municipio("Barueri", "Fundamental II")
+        base_fi = dados_municipio("Barueri", "Fundamental I", rede="Municipal")
+        base_fii = dados_municipio("Barueri", "Fundamental II", rede="Municipal")
 
         anos_comp = sorted(
             set(int(a) for a in base_fi["Ano"].dropna().unique())
@@ -1780,9 +2234,39 @@ if pagina == "Visão da rede":
         row = ultima_linha(d)
         if row is not None:
             cards_rede(row)
-        st.plotly_chart(grafico_lp_mat(d, f"Língua Portuguesa × Matemática — {etapa}"), use_container_width=True)
-        st.plotly_chart(grafico_lp_mat_n(d, f"LP + Matemática × Nota Média Padronizada (N) — {etapa}"), use_container_width=True)
-        st.plotly_chart(grafico_np_ideb(d, f"N × P × IDEB — {etapa}"), use_container_width=True)
+        st.plotly_chart(
+            grafico_lp_mat(
+                d,
+                f"Língua Portuguesa × Matemática — {etapa}"
+            ),
+            use_container_width=True
+        )
+
+        st.markdown(
+            '<div class="section-title">Composição e evolução do IDEB</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div class="hero-sub">N e IDEB têm escalas próximas e aparecem juntos. '
+            'O indicador P é mostrado separadamente para não distorcer a leitura. '
+            'Como se trata da mesma rede ao longo dos anos, a linha representa evolução temporal.</div>',
+            unsafe_allow_html=True
+        )
+
+        st.plotly_chart(
+            grafico_composicao_ideb_temporal(
+                d,
+                f"Nota Média Padronizada (N) e IDEB — {etapa}"
+            ),
+            use_container_width=True
+        )
+        st.plotly_chart(
+            grafico_p_temporal(
+                d,
+                f"Indicador de Rendimento (P) — {etapa}"
+            ),
+            use_container_width=True
+        )
 
     with sub[4]:
         c1, c2 = st.columns(2)
@@ -2000,96 +2484,83 @@ elif pagina == "Escolas":
 
         with t4:
             st.markdown(
-                '<div class="section-title">Fundamental I × Fundamental II na mesma escola</div>',
+                '<div class="section-title">Fundamental I × Fundamental II da mesma escola</div>',
                 unsafe_allow_html=True
             )
             st.markdown(
-                '<div class="hero-sub">Esta comparação só é exibida para escolas que possuem '
-                'resultados nas duas etapas. Os dois segmentos aparecem no mesmo gráfico.</div>',
+                '<div class="hero-sub">A comparação acompanha a mesma unidade escolar nas duas etapas. '
+                'Para proficiência e níveis SAEB, a interpretação deve respeitar a escala própria de cada etapa.</div>',
                 unsafe_allow_html=True
             )
 
-            lista_duas_etapas = escolas_com_duas_etapas()
+            escolas_fi = set(
+                escolas.loc[
+                    escolas["Etapa"] == "Fundamental I",
+                    "Escola"
+                ].dropna().astype(str)
+            )
+            escolas_fii = set(
+                escolas.loc[
+                    escolas["Etapa"] == "Fundamental II",
+                    "Escola"
+                ].dropna().astype(str)
+            )
+            escolas_ambas = sorted(escolas_fi.intersection(escolas_fii))
 
-            busca_duas = st.text_input(
+            busca_ambas = st.text_input(
                 "Buscar escola com as duas etapas",
-                placeholder="Digite parte do nome — não é necessário usar acentos",
-                key="busca_escola_duas_etapas"
+                placeholder="Digite parte do nome — pode digitar sem acentos",
+                key="esc_fifii_busca"
             )
 
-            if busca_duas:
-                lista_duas_etapas = [
-                    nome
-                    for nome in lista_duas_etapas
-                    if normalizar_texto(busca_duas)
-                    in normalizar_texto(nome)
+            if busca_ambas:
+                termo = normalizar_texto(busca_ambas)
+                escolas_ambas_filtradas = [
+                    e for e in escolas_ambas
+                    if termo in normalizar_texto(e)
                 ]
-
-            if not lista_duas_etapas:
-                st.info(
-                    "Nenhuma escola com resultados em Fundamental I e Fundamental II foi encontrada para essa busca."
-                )
             else:
-                escola_duas = st.selectbox(
+                escolas_ambas_filtradas = escolas_ambas
+
+            if not escolas_ambas_filtradas:
+                st.info("Nenhuma escola com Fundamental I e Fundamental II foi encontrada para essa busca.")
+            else:
+                escola_ff = st.selectbox(
                     "Escola",
-                    lista_duas_etapas,
-                    key="escola_duas_etapas"
+                    escolas_ambas_filtradas,
+                    key="esc_fifii_escola"
                 )
 
-                df_fi = dados_escola(
-                    escola_duas,
-                    "Fundamental I"
+                fi = dados_escola(escola_ff, "Fundamental I")
+                fii = dados_escola(escola_ff, "Fundamental II")
+
+                anos_ff = sorted(
+                    set(int(a) for a in fi["Ano"].dropna().unique())
+                    | set(int(a) for a in fii["Ano"].dropna().unique())
                 )
 
-                df_fii = dados_escola(
-                    escola_duas,
-                    "Fundamental II"
-                )
-
-                anos_comuns = sorted(
-                    set(int(a) for a in df_fi["Ano"].dropna().unique())
-                    | set(int(a) for a in df_fii["Ano"].dropna().unique())
-                )
-
-                if anos_comuns:
-                    c1, c2 = st.columns(2)
-
+                if anos_ff:
+                    c1,c2 = st.columns(2)
                     with c1:
-                        ano_ini_duas = st.selectbox(
+                        ini_ff = st.selectbox(
                             "Ano inicial",
-                            anos_comuns,
+                            anos_ff,
                             index=0,
-                            key="duas_etapas_ini"
+                            key="esc_fifii_ini"
                         )
-
-                    finais_duas = [
-                        a for a in anos_comuns
-                        if a >= ano_ini_duas
-                    ]
-
+                    finais_ff = [a for a in anos_ff if a >= ini_ff]
                     with c2:
-                        ano_fim_duas = st.selectbox(
+                        fim_ff = st.selectbox(
                             "Ano final",
-                            finais_duas,
-                            index=len(finais_duas)-1,
-                            key="duas_etapas_fim"
+                            finais_ff,
+                            index=len(finais_ff)-1,
+                            key="esc_fifii_fim"
                         )
 
-                    fi_periodo = df_fi[
-                        df_fi["Ano"].between(
-                            ano_ini_duas,
-                            ano_fim_duas
-                        )
-                    ].copy()
+                    fi = fi[fi["Ano"].between(ini_ff, fim_ff)].copy()
+                    fii = fii[fii["Ano"].between(ini_ff, fim_ff)].copy()
 
-                    fii_periodo = df_fii[
-                        df_fii["Ano"].between(
-                            ano_ini_duas,
-                            ano_fim_duas
-                        )
-                    ].copy()
-
-                    tabs_duas = st.tabs([
+                    tabs_ff = st.tabs([
                         "IDEB",
                         "Língua Portuguesa",
                         "Matemática",
@@ -2098,38 +2569,35 @@ elif pagina == "Escolas":
                         "P"
                     ])
 
-                    configuracoes = [
-                        ("IDEB", 1),
-                        ("Língua Portuguesa", 1),
-                        ("Matemática", 1),
-                        ("Aprovação Geral", 1),
-                        ("N", 2),
-                        ("P", 3),
+                    indicadores_ff = [
+                        ("IDEB", 1, True),
+                        ("Língua Portuguesa", 1, False),
+                        ("Matemática", 1, False),
+                        ("Aprovação Geral", 1, False),
+                        ("N", 2, False),
+                        ("P", 3, False),
                     ]
 
-                    for tab, (indicador_duas, casas_duas) in zip(
-                        tabs_duas,
-                        configuracoes
-                    ):
+                    for tab, (ind_ff, casas_ff, metas_ff) in zip(tabs_ff, indicadores_ff):
                         with tab:
                             st.plotly_chart(
-                                grafico_comparacao_etapas_escola(
-                                    fi_periodo,
-                                    fii_periodo,
-                                    indicador_duas,
-                                    escola_duas,
-                                    casas=casas_duas
+                                grafico_comparacao_etapas(
+                                    fi,
+                                    fii,
+                                    ind_ff,
+                                    f"{ind_ff} — Fundamental I × Fundamental II — {escola_ff}",
+                                    casas=casas_ff,
+                                    metas=metas_ff
                                 ),
                                 use_container_width=True
                             )
 
                     st.markdown(
-                        '<div class="info"><b>Importante:</b> Fundamental I e Fundamental II '
-                        'não são somados. A visualização coloca as duas etapas lado a lado '
-                        'apenas para comparação da trajetória da mesma unidade escolar.</div>',
+                        '<div class="info"><b>Leitura:</b> as linhas conectam anos da mesma escola. '
+                        'Elas não representam equivalência pedagógica entre os níveis de proficiência '
+                        'do Fundamental I e do Fundamental II.</div>',
                         unsafe_allow_html=True
                     )
-
 
     painel_escolas()
 
@@ -2405,16 +2873,22 @@ elif pagina == "Aprendizagem":
                 '<div class="section-title">Ranking entre municípios</div>',
                 unsafe_allow_html=True
             )
-
             st.markdown(
-                '<div class="hero-sub">Barueri permanece sempre como <b>Rede Municipal</b>. '
-                'Os demais municípios são comparados somente dentro da rede selecionada: '
-                'Municipal, Pública, Estadual ou Federal.</div>',
+                '<div class="hero-sub">Barueri permanece sempre como Rede Municipal. '
+                'Você pode analisar o ranking geral da rede escolhida ou recalcular o ranking '
+                'somente entre municípios selecionados.</div>',
                 unsafe_allow_html=True
             )
 
-            with st.form("form_ranking_municipios"):
-                c1,c2,c3 = st.columns([1.2,1.4,1.3])
+            modo_rank_m = st.radio(
+                "Tipo de ranking",
+                ["Ranking geral", "Municípios selecionados"],
+                horizontal=True,
+                key="rank_m_modo"
+            )
+
+            with st.form("form_ranking_municipios_v28"):
+                c1,c2,c3 = st.columns([1.2,1.7,1.3])
 
                 with c1:
                     etapa_m = st.selectbox(
@@ -2424,21 +2898,17 @@ elif pagina == "Aprendizagem":
                     )
 
                 with c2:
-                    disciplina_m = st.selectbox(
-                        "Disciplina",
-                        ["Língua Portuguesa", "Matemática"],
-                        key="rank_m_disc"
+                    indicador_m = st.selectbox(
+                        "Indicador do ranking",
+                        list(RANKING_INDICADORES.keys()),
+                        key="rank_m_indicador"
                     )
 
                 redes_disponiveis = [
                     r for r in ["Municipal", "Pública", "Estadual", "Federal"]
                     if (
-                        (
-                            municipios["Etapa"] == etapa_m
-                        ) &
-                        (
-                            municipios["Rede"] == r
-                        )
+                        (municipios["Etapa"] == etapa_m) &
+                        (municipios["Rede"] == r)
                     ).any()
                 ]
 
@@ -2452,12 +2922,8 @@ elif pagina == "Aprendizagem":
                 anos_m = sorted(
                     int(a)
                     for a in municipios.loc[
-                        (
-                            municipios["Etapa"] == etapa_m
-                        ) &
-                        (
-                            municipios["Rede"] == rede_m
-                        ),
+                        (municipios["Etapa"] == etapa_m) &
+                        (municipios["Rede"] == rede_m),
                         "Ano"
                     ].dropna().unique()
                 )
@@ -2472,10 +2938,7 @@ elif pagina == "Aprendizagem":
                         key="rank_m_ini"
                     )
 
-                finais_m = [
-                    a for a in anos_m
-                    if a > ano_ini_m
-                ]
+                finais_m = [a for a in anos_m if a > ano_ini_m]
 
                 with c5:
                     ano_fim_m = st.selectbox(
@@ -2487,145 +2950,112 @@ elif pagina == "Aprendizagem":
 
                 with c6:
                     quantidade_m = st.selectbox(
-                        "Quantidade no gráfico",
+                        "Quantidade exibida",
                         [10, 20, 30, 50, "Todos"],
                         index=1,
                         key="rank_m_qtd"
                     )
 
-                st.form_submit_button(
-                    "Aplicar ranking",
-                    type="primary"
+                st.form_submit_button("Aplicar ranking", type="primary")
+
+            if modo_rank_m == "Ranking geral":
+                comp_m = comp_ranking_municipios_indicador(
+                    etapa_m,
+                    indicador_m,
+                    ano_ini_m,
+                    ano_fim_m,
+                    rede_m
+                )
+                comp_m = adicionar_barueri_indicador(
+                    comp_m,
+                    etapa_m,
+                    indicador_m,
+                    ano_ini_m,
+                    ano_fim_m,
+                    rede_m
                 )
 
-            comp_m = comparar_rankings(
-                "Município",
-                etapa_m,
-                disciplina_m,
-                ano_ini_m,
-                ano_fim_m,
-                rede_comparacao=rede_m
-            )
-
-            comp_m = adicionar_barueri_referencia(
-                comp_m,
-                etapa_m,
-                disciplina_m,
-                ano_ini_m,
-                ano_fim_m,
-                rede_m
-            )
-
-            universo_sem_barueri = comp_m[
-                comp_m.get(
-                    "_Referencia",
-                    False
-                ) != True
-            ]
-
-            total_atual = universo_sem_barueri[
-                "Município"
-            ].nunique()
-
-            total_inicial = ranking_municipios_ano(
-                etapa_m,
-                ano_ini_m,
-                disciplina_m,
-                rede_m
-            )["Município"].nunique()
-
-            st.markdown(
-                f'<div class="info">'
-                f'<b>Universo da comparação:</b> '
-                f'{total_atual} municípios com resultado em {ano_fim_m} '
-                f'na Rede {rede_m} — {etapa_m}. '
-                f'No ano inicial ({ano_ini_m}), havia {total_inicial}. '
-                f'<br><b>Referência fixa:</b> Barueri — Rede Municipal.'
-                f'</div>',
-                unsafe_allow_html=True
-            )
-
-            st.markdown(
-                legenda_niveis_html(etapa_m),
-                unsafe_allow_html=True
-            )
-
-            if comp_m.empty:
-                st.info(
-                    "Não há dados suficientes para montar o ranking selecionado."
-                )
-            else:
-                barueri = comp_m[
-                    comp_m["Município"] == "Barueri"
-                ]
-
-                if not barueri.empty:
-                    b = barueri.iloc[0]
-
-                    c1,c2,c3,c4 = st.columns(4)
-
-                    c1.metric(
-                        "Barueri • posição inicial",
-                        (
-                            f'{int(b["Posição Inicial"])}º'
-                            if pd.notna(b["Posição Inicial"])
-                            else "—"
-                        )
-                    )
-
-                    c2.metric(
-                        "Barueri • posição atual",
-                        (
-                            f'{int(b["Posição Atual"])}º'
-                            if pd.notna(b["Posição Atual"])
-                            else "—"
-                        )
-                    )
-
-                    c3.metric(
-                        "Movimento",
-                        b["Movimento"]
-                    )
-
-                    c4.metric(
-                        "Nível atual",
-                        b["Nível Atual Texto"]
-                    )
-
-                st.plotly_chart(
-                    grafico_ranking_movimento(
-                        comp_m,
-                        "Município",
-                        etapa_m,
-                        disciplina_m,
-                        ano_ini_m,
-                        ano_fim_m,
-                        quantidade=quantidade_m,
-                        rede_comparacao=rede_m
-                    ),
-                    use_container_width=True
-                )
+                universo = comp_m[
+                    comp_m.get("_Referencia", False) != True
+                ] if "_Referencia" in comp_m.columns else comp_m
 
                 st.markdown(
-                    '<div class="section-title">Tabela analítica do ranking</div>',
+                    f'<div class="info"><b>Universo atual:</b> '
+                    f'{universo["Município"].nunique()} municípios com resultado em {ano_fim_m} '
+                    f'na Rede {rede_m} — {etapa_m}. '
+                    f'<br><b>Referência fixa:</b> Barueri — Rede Municipal.</div>',
                     unsafe_allow_html=True
                 )
 
-                tabela_m = tabela_ranking_exibicao(
+                tabela_visual_ranking(
                     comp_m,
-                    "Município"
+                    "Município",
+                    indicador_m,
+                    quantidade=quantidade_m,
+                    destaque_barueri=True
                 )
 
-                st.dataframe(
-                    tabela_m,
-                    hide_index=True,
-                    use_container_width=True,
-                    height=520
+            else:
+                opcoes_m = sorted(
+                    municipios.loc[
+                        (municipios["Etapa"] == etapa_m) &
+                        (municipios["Rede"] == rede_m) &
+                        (municipios["Município"] != "Barueri"),
+                        "Município"
+                    ].dropna().unique()
                 )
 
-                st.markdown('<div class="section-title">Matriz nível × tendência</div>', unsafe_allow_html=True)
+                selecionados_m = st.multiselect(
+                    "Selecione os municípios",
+                    opcoes_m,
+                    max_selections=10,
+                    key="rank_m_selecionados",
+                    placeholder="Selecione até 10 municípios"
+                )
+
+                if not selecionados_m:
+                    st.info(
+                        "Selecione pelo menos um município. "
+                        "Barueri será incluída automaticamente como Rede Municipal."
+                    )
+                else:
+                    comp_sel = ranking_selecionados_municipios(
+                        selecionados_m,
+                        etapa_m,
+                        indicador_m,
+                        ano_ini_m,
+                        ano_fim_m,
+                        rede_m
+                    )
+
+                    st.markdown(
+                        f'<div class="info"><b>Ranking restrito ao grupo selecionado.</b> '
+                        f'As posições são recalculadas somente entre esses municípios. '
+                        f'Barueri permanece como Rede Municipal; os demais usam Rede {rede_m}.</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    tabela_visual_ranking(
+                        comp_sel,
+                        "Município",
+                        indicador_m,
+                        quantidade="Todos",
+                        destaque_barueri=True
+                    )
+
+            # A matriz nível × tendência só faz sentido para proficiências SAEB.
+            if indicador_m in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+                disciplina_m = (
+                    "Língua Portuguesa"
+                    if indicador_m.startswith("Língua")
+                    else "Matemática"
+                )
+                st.markdown(
+                    '<div class="section-title">Matriz nível × tendência</div>',
+                    unsafe_allow_html=True
+                )
                 fig_m, comp_matriz = fig_matriz_nivel_tendencia(
-                    comp_m,
+                    pd.DataFrame(),
                     "Município",
                     disciplina_m,
                     ano_ini_m,
@@ -2643,13 +3073,13 @@ elif pagina == "Aprendizagem":
                 unsafe_allow_html=True
             )
             st.markdown(
-                '<div class="hero-sub">Acompanhe a posição das unidades escolares, a variação '
-                'entre duas edições e a mudança de nível de proficiência.</div>',
+                '<div class="hero-sub">A classificação mostra posição atual, resultado do indicador, '
+                'IDEB da escola e movimento em relação ao ano inicial.</div>',
                 unsafe_allow_html=True
             )
 
-            with st.form("form_ranking_escolas"):
-                c1,c2,c3,c4 = st.columns([1.3,1.5,1,1])
+            with st.form("form_ranking_escolas_v28"):
+                c1,c2,c3,c4 = st.columns([1.2,1.7,1,1])
 
                 with c1:
                     etapa_e = st.selectbox(
@@ -2659,10 +3089,10 @@ elif pagina == "Aprendizagem":
                     )
 
                 with c2:
-                    disciplina_e = st.selectbox(
-                        "Disciplina",
-                        ["Língua Portuguesa", "Matemática"],
-                        key="rank_e_disc"
+                    indicador_e = st.selectbox(
+                        "Indicador do ranking",
+                        list(RANKING_INDICADORES.keys()),
+                        key="rank_e_indicador"
                     )
 
                 anos_e = sorted(
@@ -2692,126 +3122,56 @@ elif pagina == "Aprendizagem":
                     )
 
                 quantidade_e = st.selectbox(
-                    "Quantidade exibida no gráfico",
+                    "Quantidade exibida",
                     [10, 20, 30, 50, "Todos"],
                     index=1,
                     key="rank_e_qtd"
                 )
 
-                st.form_submit_button(
-                    "Aplicar ranking",
-                    type="primary"
-                )
+                st.form_submit_button("Aplicar ranking", type="primary")
 
-            comp_e = comparar_rankings(
-                "Escola",
+            comp_e = comp_ranking_escolas_indicador(
                 etapa_e,
-                disciplina_e,
+                indicador_e,
                 ano_ini_e,
                 ano_fim_e
-            )
-
-            st.markdown(
-                legenda_niveis_html(etapa_e),
-                unsafe_allow_html=True
             )
 
             if comp_e.empty:
                 st.info("Não há dados suficientes para montar o ranking selecionado.")
             else:
-                busca_destaque = st.text_input(
-                    "Buscar uma escola para destacar no ranking",
-                    placeholder="Opcional — pode digitar sem acentos",
-                    key="rank_e_busca_destaque"
-                )
-
-                opcoes_destaque = filtrar_nomes_busca(
-                    escolas,
+                tabela_visual_ranking(
+                    comp_e,
                     "Escola",
-                    "Escola_Busca",
-                    busca_destaque,
-                    filtro=(escolas["Etapa"] == etapa_e)
+                    indicador_e,
+                    quantidade=quantidade_e,
+                    destaque_barueri=False
                 )
 
-                destaque = "Nenhuma"
-
-                if opcoes_destaque:
-                    destaque = st.selectbox(
-                        "Destacar escola",
-                        ["Nenhuma"] + opcoes_destaque,
-                        key="rank_e_destaque"
+                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+                    disciplina_e = (
+                        "Língua Portuguesa"
+                        if indicador_e.startswith("Língua")
+                        else "Matemática"
                     )
 
-                if destaque != "Nenhuma":
-                    linha = comp_e[
-                        comp_e["Escola"] == destaque
-                    ]
+                    st.markdown(
+                        '<div class="section-title">Matriz nível × tendência</div>',
+                        unsafe_allow_html=True
+                    )
 
-                    if not linha.empty:
-                        r = linha.iloc[0]
-
-                        c1,c2,c3,c4 = st.columns(4)
-
-                        c1.metric(
-                            "Posição inicial",
-                            f'{int(r["Posição Inicial"])}º'
-                            if pd.notna(r["Posição Inicial"]) else "—"
-                        )
-                        c2.metric(
-                            "Posição atual",
-                            f'{int(r["Posição Atual"])}º'
-                        )
-                        c3.metric(
-                            "Movimento",
-                            r["Movimento"]
-                        )
-                        c4.metric(
-                            "Nível atual",
-                            r["Nível Atual Texto"]
-                        )
-
-                st.plotly_chart(
-                    grafico_ranking_movimento(
-                        comp_e,
+                    fig_e, comp_matriz_e = fig_matriz_nivel_tendencia(
+                        pd.DataFrame(),
                         "Escola",
-                        etapa_e,
                         disciplina_e,
                         ano_ini_e,
                         ano_fim_e,
-                        quantidade=quantidade_e,
-                        destaque=destaque
-                    ),
-                    use_container_width=True
-                )
+                        etapa_e
+                    )
 
-                st.markdown(
-                    '<div class="section-title">Tabela analítica do ranking</div>',
-                    unsafe_allow_html=True
-                )
+                    cards_movimento(comp_matriz_e)
+                    st.plotly_chart(fig_e, use_container_width=True)
 
-                tabela_e = tabela_ranking_exibicao(
-                    comp_e,
-                    "Escola"
-                )
-
-                st.dataframe(
-                    tabela_e,
-                    hide_index=True,
-                    use_container_width=True,
-                    height=520
-                )
-
-                st.markdown('<div class="section-title">Matriz nível × tendência</div>', unsafe_allow_html=True)
-                fig_e, comp_matriz_e = fig_matriz_nivel_tendencia(
-                    comp_e,
-                    "Escola",
-                    disciplina_e,
-                    ano_ini_e,
-                    ano_fim_e,
-                    etapa_e
-                )
-                cards_movimento(comp_matriz_e)
-                st.plotly_chart(fig_e, use_container_width=True)
 
     painel_aprendizagem()
 
@@ -3005,12 +3365,18 @@ elif pagina == "Território":
         )
 
         st.markdown(
-            '<div class="section-title">N × P × IDEB</div>',
+            '<div class="section-title">Composição do IDEB por município</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div class="hero-sub">Os municípios são observações independentes. '
+            'Por isso, não há linhas ligando uma cidade à outra. '
+            'A leitura é feita individualmente como N × P → IDEB.</div>',
             unsafe_allow_html=True
         )
 
         ano_ref = st.selectbox(
-            "Ano para comparação transversal",
+            "Ano da composição",
             finais,
             index=len(finais)-1,
             key="np_ano"
@@ -3021,7 +3387,7 @@ elif pagina == "Território":
 
         for nome in nomes:
             if nome == "Barueri":
-                d = dados_municipio(
+                d_np = dados_municipio(
                     "Barueri",
                     etapa,
                     ano_ref,
@@ -3030,7 +3396,7 @@ elif pagina == "Território":
                 )
                 nome_exibido = "Barueri — Municipal"
             else:
-                d = municipios[
+                d_np = municipios[
                     (municipios["Município"] == nome) &
                     (municipios["Etapa"] == etapa) &
                     (municipios["Rede"] == rede_territorio) &
@@ -3038,68 +3404,42 @@ elif pagina == "Território":
                 ].copy()
                 nome_exibido = f"{nome} — {rede_territorio}"
 
-            if not d.empty:
-                r = d.iloc[-1]
+            if not d_np.empty:
+                r_np = d_np.iloc[-1]
                 rows.append({
                     "Município": nome_exibido,
-                    "N": r.get("N"),
-                    "P": r.get("P"),
-                    "IDEB": r.get("IDEB")
+                    "N": r_np.get("N"),
+                    "P": r_np.get("P"),
+                    "IDEB": r_np.get("IDEB")
                 })
 
-        trans = pd.DataFrame(rows)
+        trans = tabela_composicao_unidades(rows)
 
-        if not trans.empty:
-            fig = go.Figure()
-
-            fig.add_trace(go.Bar(
-                x=trans["Município"],
-                y=trans["N"],
-                name="N",
-                marker_color="#E5A8BA"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=trans["Município"],
-                y=trans["IDEB"],
-                name="IDEB",
-                mode="lines+markers+text",
-                text=[fmt(v,1) for v in trans["IDEB"]],
-                textposition="bottom center",
-                line=dict(color=LARANJA,width=3)
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=trans["Município"],
-                y=trans["P"],
-                name="P",
-                mode="lines+markers+text",
-                yaxis="y2",
-                text=[fmt(v,3) for v in trans["P"]],
-                textposition="top center",
-                line=dict(color=LILAS_P,width=3)
-            ))
-
-            estilo_fig(
-                fig,
-                f"N × P × IDEB — {ano_ref} — {etapa}",
-                "N / IDEB",
-                520
+        if trans.empty:
+            st.info("Não há dados suficientes para a composição do IDEB no ano selecionado.")
+        else:
+            cards_composicao_ideb(
+                trans,
+                "Município"
             )
 
-            fig.update_layout(
-                yaxis2=dict(
-                    title="P",
-                    overlaying="y",
-                    side="right",
-                    showgrid=False
-                )
+            tabela_np = trans.copy()
+            tabela_np["N"] = tabela_np["N"].map(
+                lambda v: fmt(v,2) if pd.notna(v) else "—"
+            )
+            tabela_np["P"] = tabela_np["P"].map(
+                lambda v: fmt(v,3) if pd.notna(v) else "—"
+            )
+            tabela_np["IDEB"] = tabela_np["IDEB"].map(
+                lambda v: fmt(v,1) if pd.notna(v) else "—"
             )
 
-            st.plotly_chart(
-                fig,
+            st.dataframe(
+                tabela_np,
+                hide_index=True,
                 use_container_width=True
             )
+
 
     painel_territorio()
 
