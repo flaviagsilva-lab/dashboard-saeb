@@ -1987,6 +1987,201 @@ def tabela_visual_ranking(
             unsafe_allow_html=True
         )
 
+
+
+def classificacao_visual_ranking(indicador_label, valor, nivel_saeb=None, padrao_saeb=None):
+    if pd.isna(valor):
+        return "Sem resultado", "#CBD5E1"
+
+    if indicador_label in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+        if pd.notna(nivel_saeb):
+            n = int(float(nivel_saeb))
+            etapa = st.session_state.get("rank_m_etapa") or st.session_state.get("rank_e_etapa") or "Fundamental I"
+            cor = cores_niveis(etapa).get(n, "#CBD5E1")
+            rotulo = f"Nível {n}"
+            if pd.notna(padrao_saeb) and str(padrao_saeb).strip():
+                rotulo += f" • {padrao_saeb}"
+            return rotulo, cor
+        return "Sem nível", "#CBD5E1"
+
+    if indicador_label == "IDEB":
+        v = float(valor)
+        if v >= 6.0:
+            return "Avançado", "#16A34A"
+        if v >= 5.0:
+            return "Adequado", "#F4B400"
+        if v >= 4.0:
+            return "Básico", "#2583E9"
+        if v >= 3.0:
+            return "Insuficiente", "#F97316"
+        return "Crítico", "#E31B23"
+
+    return "Nota padronizada", "#0E5A70"
+
+
+def ranking_visual_com_barras(comp, entidade, indicador_label, quantidade="Todos", destaque_barueri=False):
+    chave = "Município" if entidade == "Município" else "Escola"
+    cfg = RANKING_INDICADORES[indicador_label]
+    base = comp.copy()
+
+    if quantidade != "Todos":
+        if entidade == "Município" and "_Referencia" in base.columns:
+            ref = base[base["_Referencia"] == True]
+            outros = base[base["_Referencia"] != True].head(int(quantidade))
+            base = pd.concat([outros, ref], ignore_index=True)
+        else:
+            base = base.head(int(quantidade))
+
+    base = base.drop_duplicates(chave).sort_values(["Posição Atual", chave]).copy()
+
+    if base.empty:
+        st.info("Não há resultados para os filtros selecionados.")
+        return
+
+    atual_num = pd.to_numeric(base["Resultado Atual"], errors="coerce")
+    inicial_num = pd.to_numeric(base["Resultado Inicial"], errors="coerce")
+
+    if indicador_label == "IDEB":
+        escala_min, escala_max = 0.0, 10.0
+    else:
+        valores = pd.concat([atual_num, inicial_num]).dropna()
+        if valores.empty:
+            escala_min, escala_max = 0.0, 1.0
+        elif indicador_label in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+            escala_min = max(0.0, float(valores.min()) - 15)
+            escala_max = float(valores.max()) + 15
+        else:
+            escala_min = 0.0
+            escala_max = max(10.0, float(valores.max()))
+
+    def pct(v):
+        if pd.isna(v) or escala_max <= escala_min:
+            return 0
+        return max(2, min(100, ((float(v)-escala_min)/(escala_max-escala_min))*100))
+
+    rotulo = cfg["rotulo"]
+
+    header = (
+        '<div style="display:grid;grid-template-columns:72px minmax(210px,1.35fr) '
+        'minmax(290px,2fr) 105px 115px 115px 130px;gap:14px;padding:9px 14px;'
+        'border-bottom:1px solid #D8E0E8;color:#52606D;font-size:11px;font-weight:800;">'
+        '<div>POSIÇÃO</div>'
+        f'<div>{entidade.upper()}</div>'
+        f'<div>{rotulo.upper()} — RESULTADO ATUAL</div>'
+        '<div>POS. INICIAL</div><div>RESULT. INICIAL</div>'
+        '<div>VARIAÇÃO</div><div>MOVIMENTO</div></div>'
+    )
+    st.markdown(header, unsafe_allow_html=True)
+
+    for _, r in base.iterrows():
+        atual = r.get("Resultado Atual")
+        inicial = r.get("Resultado Inicial")
+        pa = r.get("Posição Atual")
+        pi = r.get("Posição Inicial")
+        vp = r.get("Variação de Posição")
+
+        classe, cor = classificacao_visual_ranking(
+            indicador_label, atual, r.get("Nível Atual"), r.get("Padrão Atual")
+        )
+
+        if pd.isna(vp):
+            mov, cor_mov = "—", "#6B7280"
+        elif vp > 0:
+            mov, cor_mov = f"↑ {int(vp)}", "#169B62"
+        elif vp < 0:
+            mov, cor_mov = f"↓ {abs(int(vp))}", "#D92D20"
+        else:
+            mov, cor_mov = "= 0", "#6B7280"
+
+        if pd.notna(atual) and pd.notna(inicial):
+            dv = float(atual) - float(inicial)
+            sinal = "+" if dv > 0 else ""
+            var_txt = f"{sinal}{fmt(dv,cfg['casas'])}"
+            cor_var = "#169B62" if dv > 0 else "#D92D20" if dv < 0 else "#374151"
+        else:
+            var_txt, cor_var = "—", "#6B7280"
+
+        rede = str(r.get("Rede Atual", "") or "") if entidade == "Município" else ""
+        pa_txt = "—" if pd.isna(pa) else f"{int(pa)}º"
+        pi_txt = "—" if pd.isna(pi) else f"{int(pi)}º"
+        border = "2px solid #0E5A70" if destaque_barueri and r[chave] == "Barueri" else "1px solid #E3E8EF"
+
+        row = (
+            f'<div style="border:{border};background:white;border-radius:12px;padding:13px 14px;'
+            'margin:7px 0;display:grid;grid-template-columns:72px minmax(210px,1.35fr) '
+            'minmax(290px,2fr) 105px 115px 115px 130px;gap:14px;align-items:center;">'
+            f'<div style="font-size:23px;font-weight:800;">{pa_txt}</div>'
+            f'<div><div style="font-size:15px;font-weight:800;">{r[chave]}</div>'
+            f'<div style="font-size:11px;color:#6B7280;margin-top:3px;">{rede}</div></div>'
+            '<div>'
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+            f'<span style="background:{cor};color:white;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:800;">{classe}</span>'
+            f'<span style="font-size:18px;font-weight:800;">{fmt(atual,cfg["casas"])}</span></div>'
+            '<div style="height:10px;background:#E9EDF2;border-radius:6px;overflow:hidden;">'
+            f'<div style="height:100%;width:{pct(atual):.1f}%;background:{cor};border-radius:6px;"></div></div></div>'
+            f'<div style="font-size:16px;font-weight:700;">{pi_txt}</div>'
+            f'<div style="font-size:16px;font-weight:700;">{fmt(inicial,cfg["casas"])}</div>'
+            f'<div style="font-size:16px;font-weight:800;color:{cor_var};">{var_txt}</div>'
+            f'<div><div style="font-size:17px;font-weight:850;color:{cor_mov};">{mov}</div>'
+            f'<div style="font-size:11px;color:#6B7280;">{"de "+pi_txt if pi_txt != "—" else ""}</div></div></div>'
+        )
+        st.markdown(row, unsafe_allow_html=True)
+
+    if indicador_label == "IDEB":
+        legend = (
+            '<div style="margin-top:14px;padding:13px 16px;background:white;border:1px solid #E3E8EF;border-radius:12px;">'
+            '<div style="font-size:12px;font-weight:800;margin-bottom:10px;">Classificação visual utilizada no ranking do IDEB</div>'
+            '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px;">'
+            '<span><b style="color:#16A34A;">■</b> Avançado ≥ 6,0</span>'
+            '<span><b style="color:#F4B400;">■</b> Adequado 5,0–5,9</span>'
+            '<span><b style="color:#2583E9;">■</b> Básico 4,0–4,9</span>'
+            '<span><b style="color:#F97316;">■</b> Insuficiente 3,0–3,9</span>'
+            '<span><b style="color:#E31B23;">■</b> Crítico &lt; 3,0</span>'
+            '</div></div>'
+        )
+        st.markdown(legend, unsafe_allow_html=True)
+    elif indicador_label in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+        st.caption("As cores correspondem aos níveis de proficiência do Saeb definidos para a etapa e o componente selecionados.")
+
+def opcoes_municipios_busca_ranking(
+    etapa,
+    rede,
+    termo="",
+    selecionados=None
+):
+    """
+    Busca sobre Município_Busca, coluna normalizada uma única vez
+    dentro de carregar_bases() com @st.cache_data.
+    """
+    selecionados = selecionados or []
+
+    base = municipios[
+        (municipios["Etapa"] == etapa) &
+        (municipios["Rede"] == rede) &
+        (municipios["Município"] != "Barueri")
+    ][["Município", "Município_Busca"]].drop_duplicates()
+
+    termo_norm = normalizar_texto(termo)
+
+    if termo_norm:
+        encontrados = base[
+            base["Município_Busca"]
+            .astype("string")
+            .str.contains(
+                termo_norm,
+                na=False,
+                regex=False
+            )
+        ]["Município"].astype(str).tolist()
+    else:
+        encontrados = base["Município"].astype(str).tolist()
+
+    # Mantém municípios já selecionados nas opções enquanto
+    # uma nova busca é feita.
+    return sorted(
+        set(encontrados).union(set(selecionados))
+    )
+
 def cards_rede(row):
     itens = [
         ("IDEB", row.get("IDEB"), 1, ""),
@@ -3008,7 +3203,7 @@ elif pagina == "Aprendizagem":
                     unsafe_allow_html=True
                 )
 
-                tabela_visual_ranking(
+                ranking_visual_com_barras(
                     comp_m,
                     "Município",
                     indicador_m,
@@ -3017,13 +3212,22 @@ elif pagina == "Aprendizagem":
                 )
 
             else:
-                opcoes_m = sorted(
-                    municipios.loc[
-                        (municipios["Etapa"] == etapa_m) &
-                        (municipios["Rede"] == rede_m) &
-                        (municipios["Município"] != "Barueri"),
-                        "Município"
-                    ].dropna().unique()
+                busca_rank_m = st.text_input(
+                    "Buscar município",
+                    placeholder='Digite sem acento, por exemplo: "sao"',
+                    key="rank_m_busca_texto"
+                )
+
+                selecionados_atuais = st.session_state.get(
+                    "rank_m_selecionados",
+                    []
+                )
+
+                opcoes_m = opcoes_municipios_busca_ranking(
+                    etapa_m,
+                    rede_m,
+                    busca_rank_m,
+                    selecionados_atuais
                 )
 
                 selecionados_m = st.multiselect(
@@ -3056,7 +3260,7 @@ elif pagina == "Aprendizagem":
                         unsafe_allow_html=True
                     )
 
-                    tabela_visual_ranking(
+                    ranking_visual_com_barras(
                         comp_sel,
                         "Município",
                         indicador_m,
@@ -3161,7 +3365,7 @@ elif pagina == "Aprendizagem":
             if comp_e.empty:
                 st.info("Não há dados suficientes para montar o ranking selecionado.")
             else:
-                tabela_visual_ranking(
+                ranking_visual_com_barras(
                     comp_e,
                     "Escola",
                     indicador_e,
