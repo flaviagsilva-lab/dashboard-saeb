@@ -837,6 +837,23 @@ def comparar_rankings(
     else:
         ini = ranking_escolas_ano(etapa, ano_ini, disciplina)
         fim = ranking_escolas_ano(etapa, ano_fim, disciplina)
+
+        if not incluir_itbs:
+            ini = ini.loc[~mascara_itb(ini["Escola"])].copy()
+            fim = fim.loc[~mascara_itb(fim["Escola"])].copy()
+
+            # Recalcula as posições dentro do universo sem ITBs.
+            coluna_disc, _, _ = colunas_disciplina(disciplina)
+            ini["Posição"] = (
+                pd.to_numeric(ini[coluna_disc], errors="coerce")
+                .rank(method="min", ascending=False)
+                .astype("Int64")
+            )
+            fim["Posição"] = (
+                pd.to_numeric(fim[coluna_disc], errors="coerce")
+                .rank(method="min", ascending=False)
+                .astype("Int64")
+            )
         chave = "Escola"
 
         ini = ini[
@@ -1333,7 +1350,15 @@ def resultado_evolucao_barueri(etapa, disciplina, anos=(2019, 2023, 2025)):
             })
     return pd.DataFrame(out)
 
-def fig_matriz_nivel_tendencia(df, entidade, disciplina, ano_ini, ano_fim, etapa):
+def fig_matriz_nivel_tendencia(
+    df,
+    entidade,
+    disciplina,
+    ano_ini,
+    ano_fim,
+    etapa,
+    incluir_itbs=True
+):
     chave = "Município" if entidade == "Município" else "Escola"
     coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
 
@@ -1590,7 +1615,12 @@ def ranking_base_municipios_indicador(etapa, ano, indicador_label, rede):
     x["Posição"] = x[coluna].rank(method="min", ascending=False).astype("Int64")
     return x.sort_values(["Posição", "Município"]).reset_index(drop=True)
 
-def ranking_base_escolas_indicador(etapa, ano, indicador_label):
+def ranking_base_escolas_indicador(
+    etapa,
+    ano,
+    indicador_label,
+    incluir_itbs=True
+):
     cfg = RANKING_INDICADORES[indicador_label]
     coluna = cfg["coluna"]
 
@@ -1598,6 +1628,11 @@ def ranking_base_escolas_indicador(etapa, ano, indicador_label):
         (escolas["Etapa"] == etapa) &
         (escolas["Ano"] == ano)
     ].copy()
+
+    # O filtro acontece ANTES do cálculo da posição.
+    # Assim, ao excluir ITBs, o ranking é recalculado sem deixar "buracos".
+    if not incluir_itbs:
+        x = x.loc[~mascara_itb(x["Escola"])].copy()
 
     x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
     x["IDEB"] = pd.to_numeric(x["IDEB"], errors="coerce")
@@ -1682,15 +1717,29 @@ def comp_ranking_municipios_indicador(
     return comp.sort_values(["Posição Atual", "Município"]).reset_index(drop=True)
 
 def comp_ranking_escolas_indicador(
-    etapa, indicador_label, ano_ini, ano_fim
+    etapa,
+    indicador_label,
+    ano_ini,
+    ano_fim,
+    incluir_itbs=True
 ):
     cfg = RANKING_INDICADORES[indicador_label]
     coluna = cfg["coluna"]
     nivel_col = cfg["nivel"]
     padrao_col = cfg["padrao"]
 
-    ini = ranking_base_escolas_indicador(etapa, ano_ini, indicador_label)
-    fim = ranking_base_escolas_indicador(etapa, ano_fim, indicador_label)
+    ini = ranking_base_escolas_indicador(
+        etapa,
+        ano_ini,
+        indicador_label,
+        incluir_itbs=incluir_itbs
+    )
+    fim = ranking_base_escolas_indicador(
+        etapa,
+        ano_fim,
+        indicador_label,
+        incluir_itbs=incluir_itbs
+    )
 
     cols_ini = ["Escola", coluna, "Posição"]
     cols_fim = ["Escola", coluna, "Posição"]
@@ -3543,11 +3592,13 @@ elif pagina == "Aprendizagem":
                 etapa_e,
                 indicador_e,
                 ano_ini_e,
-                ano_fim_e
-            )
-            comp_e = filtrar_itbs_dataframe(
-                comp_e,
+                ano_fim_e,
                 incluir_itbs=incluir_itbs_e
+            )
+
+            st.caption(
+                f"Universo do ranking: {comp_e['Escola'].nunique()} escolas "
+                + ("incluindo ITBs." if incluir_itbs_e else "com ITBs excluídos e posições recalculadas.")
             )
 
             if comp_e.empty:
@@ -3574,7 +3625,7 @@ elif pagina == "Aprendizagem":
                         config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
                     )
 
-                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"] and incluir_itbs_e:
+                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
                     disciplina_e = (
                         "Língua Portuguesa"
                         if indicador_e.startswith("Língua")
@@ -3592,16 +3643,12 @@ elif pagina == "Aprendizagem":
                         disciplina_e,
                         ano_ini_e,
                         ano_fim_e,
-                        etapa_e
+                        etapa_e,
+                        incluir_itbs=incluir_itbs_e
                     )
 
                     cards_movimento(comp_matriz_e)
                     st.plotly_chart(fig_e, use_container_width=True)
-
-                elif indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"] and not incluir_itbs_e:
-                    st.caption(
-                        "A matriz nível × tendência não é exibida neste recorte porque o ranking está com ITBs excluídos."
-                    )
 
 
     painel_aprendizagem()
