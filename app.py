@@ -2182,6 +2182,155 @@ def opcoes_municipios_busca_ranking(
         set(encontrados).union(set(selecionados))
     )
 
+
+def mascara_itb(series):
+    """
+    Identifica ITBs sem alterar a base original.
+    Usa normalização vetorizada apenas sobre a Series recebida.
+    """
+    s = (
+        series.astype("string")
+        .str.normalize("NFKD")
+        .str.encode("ascii", errors="ignore")
+        .str.decode("utf-8")
+        .str.lower()
+        .str.strip()
+    )
+    return s.str.startswith("itb", na=False)
+
+def filtrar_itbs_dataframe(df, incluir_itbs=True):
+    if incluir_itbs or "Escola" not in df.columns:
+        return df
+    return df.loc[~mascara_itb(df["Escola"])].copy()
+
+def preparar_ranking_download(comp, entidade, indicador_label, quantidade="Todos"):
+    chave = "Município" if entidade == "Município" else "Escola"
+    cfg = RANKING_INDICADORES[indicador_label]
+    base = comp.copy()
+
+    if quantidade != "Todos":
+        if entidade == "Município" and "_Referencia" in base.columns:
+            ref = base[base["_Referencia"] == True]
+            outros = base[base["_Referencia"] != True].head(int(quantidade))
+            base = pd.concat([outros, ref], ignore_index=True)
+        else:
+            base = base.head(int(quantidade))
+
+    base = base.drop_duplicates(chave).sort_values(["Posição Atual", chave]).copy()
+
+    cols = [chave]
+    if entidade == "Município" and "Rede Atual" in base.columns:
+        cols.append("Rede Atual")
+
+    cols += [
+        "Posição Atual", "Resultado Atual",
+        "Posição Inicial", "Resultado Inicial",
+        "Variação de Posição", "Movimento"
+    ]
+
+    if "Nível Atual" in base.columns:
+        cols.append("Nível Atual")
+    if "Padrão Atual" in base.columns:
+        cols.append("Padrão Atual")
+
+    cols = [c for c in cols if c in base.columns]
+    out = base[cols].copy()
+    out = out.rename(columns={
+        "Resultado Atual": cfg["rotulo"] + " Atual",
+        "Resultado Inicial": cfg["rotulo"] + " Inicial",
+    })
+    return out
+
+def botao_download_ranking(comp, entidade, indicador_label, quantidade, sufixo):
+    tabela = preparar_ranking_download(
+        comp, entidade, indicador_label, quantidade
+    )
+    csv = tabela.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
+
+    st.download_button(
+        "⬇️ Baixar dados do ranking (CSV)",
+        data=csv,
+        file_name=f"ranking_{sufixo}.csv",
+        mime="text/csv",
+        key=f"download_csv_{sufixo}",
+        use_container_width=False
+    )
+
+def grafico_ranking_download(comp, entidade, indicador_label, quantidade="Todos"):
+    """
+    Versão gráfica do ranking para exportação em PNG pelo menu nativo do Plotly.
+    As barras usam as mesmas cores/classificações do ranking visual.
+    """
+    chave = "Município" if entidade == "Município" else "Escola"
+    cfg = RANKING_INDICADORES[indicador_label]
+    base = comp.copy()
+
+    if quantidade != "Todos":
+        if entidade == "Município" and "_Referencia" in base.columns:
+            ref = base[base["_Referencia"] == True]
+            outros = base[base["_Referencia"] != True].head(int(quantidade))
+            base = pd.concat([outros, ref], ignore_index=True)
+        else:
+            base = base.head(int(quantidade))
+
+    base = base.drop_duplicates(chave).sort_values("Posição Atual", ascending=False).copy()
+
+    cores = []
+    classes = []
+    for _, r in base.iterrows():
+        classe, cor = classificacao_visual_ranking(
+            indicador_label,
+            r.get("Resultado Atual"),
+            r.get("Nível Atual"),
+            r.get("Padrão Atual")
+        )
+        cores.append(cor)
+        classes.append(classe)
+
+    base["_Classe"] = classes
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=base["Resultado Atual"],
+        y=base[chave],
+        orientation="h",
+        marker_color=cores,
+        text=[
+            f'{fmt(v,cfg["casas"])} • {cl}'
+            for v, cl in zip(base["Resultado Atual"], base["_Classe"])
+        ],
+        textposition="outside",
+        customdata=np.column_stack([
+            base["Posição Atual"].fillna(np.nan),
+            base["Posição Inicial"].fillna(np.nan),
+            base["Variação de Posição"].fillna(np.nan),
+        ]),
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            + cfg["rotulo"] + ": %{x}<br>"
+            "Posição atual: %{customdata[0]}<br>"
+            "Posição inicial: %{customdata[1]}<br>"
+            "Variação de posição: %{customdata[2]}"
+            "<extra></extra>"
+        )
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"Ranking — {cfg['rotulo']}",
+            x=.01, xanchor="left"
+        ),
+        height=max(430, 42 * len(base) + 110),
+        margin=dict(l=190, r=150, t=65, b=45),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        xaxis_title=cfg["rotulo"],
+        yaxis_title="",
+        showlegend=False
+    )
+    fig.update_xaxes(gridcolor="#EDF1F4")
+    return fig
+
 def cards_rede(row):
     itens = [
         ("IDEB", row.get("IDEB"), 1, ""),
@@ -3211,6 +3360,19 @@ elif pagina == "Aprendizagem":
                     destaque_barueri=True
                 )
 
+                botao_download_ranking(
+                    comp_m, "Município", indicador_m, quantidade_m,
+                    f"municipios_{etapa_m}_{rede_m}_{indicador_m}_{ano_fim_m}"
+                )
+                with st.expander("📊 Versão gráfica para visualizar ou baixar em PNG"):
+                    st.plotly_chart(
+                        grafico_ranking_download(
+                            comp_m, "Município", indicador_m, quantidade_m
+                        ),
+                        use_container_width=True,
+                        config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
+                    )
+
             else:
                 busca_rank_m = st.text_input(
                     "Buscar município",
@@ -3267,6 +3429,19 @@ elif pagina == "Aprendizagem":
                         quantidade="Todos",
                         destaque_barueri=True
                     )
+
+                    botao_download_ranking(
+                        comp_sel, "Município", indicador_m, "Todos",
+                        f"municipios_selecionados_{etapa_m}_{rede_m}_{indicador_m}_{ano_fim_m}"
+                    )
+                    with st.expander("📊 Versão gráfica para visualizar ou baixar em PNG"):
+                        st.plotly_chart(
+                            grafico_ranking_download(
+                                comp_sel, "Município", indicador_m, "Todos"
+                            ),
+                            use_container_width=True,
+                            config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
+                        )
 
             # A matriz nível × tendência só faz sentido para proficiências SAEB.
             if indicador_m in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
@@ -3346,12 +3521,21 @@ elif pagina == "Aprendizagem":
                         key="rank_e_fim"
                     )
 
-                quantidade_e = st.selectbox(
-                    "Quantidade exibida",
-                    [10, 20, 30, 50, "Todos"],
-                    index=1,
-                    key="rank_e_qtd"
-                )
+                c5,c6 = st.columns([1,1])
+                with c5:
+                    quantidade_e = st.selectbox(
+                        "Quantidade exibida",
+                        [10, 20, 30, 50, "Todos"],
+                        index=1,
+                        key="rank_e_qtd"
+                    )
+                with c6:
+                    incluir_itbs_e = st.checkbox(
+                        "Incluir ITBs",
+                        value=True,
+                        key="rank_e_incluir_itbs",
+                        help="Os ITBs permanecem na base. Esta opção apenas controla sua participação neste ranking."
+                    )
 
                 st.form_submit_button("Aplicar ranking", type="primary")
 
@@ -3360,6 +3544,10 @@ elif pagina == "Aprendizagem":
                 indicador_e,
                 ano_ini_e,
                 ano_fim_e
+            )
+            comp_e = filtrar_itbs_dataframe(
+                comp_e,
+                incluir_itbs=incluir_itbs_e
             )
 
             if comp_e.empty:
@@ -3373,7 +3561,20 @@ elif pagina == "Aprendizagem":
                     destaque_barueri=False
                 )
 
-                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"]:
+                botao_download_ranking(
+                    comp_e, "Escola", indicador_e, quantidade_e,
+                    f"escolas_{etapa_e}_{indicador_e}_{ano_fim_e}"
+                )
+                with st.expander("📊 Versão gráfica para visualizar ou baixar em PNG"):
+                    st.plotly_chart(
+                        grafico_ranking_download(
+                            comp_e, "Escola", indicador_e, quantidade_e
+                        ),
+                        use_container_width=True,
+                        config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
+                    )
+
+                if indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"] and incluir_itbs_e:
                     disciplina_e = (
                         "Língua Portuguesa"
                         if indicador_e.startswith("Língua")
@@ -3396,6 +3597,11 @@ elif pagina == "Aprendizagem":
 
                     cards_movimento(comp_matriz_e)
                     st.plotly_chart(fig_e, use_container_width=True)
+
+                elif indicador_e in ["Língua Portuguesa (SAEB)", "Matemática (SAEB)"] and not incluir_itbs_e:
+                    st.caption(
+                        "A matriz nível × tendência não é exibida neste recorte porque o ranking está com ITBs excluídos."
+                    )
 
 
     painel_aprendizagem()
