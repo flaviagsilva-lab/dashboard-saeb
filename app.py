@@ -144,17 +144,9 @@ def carregar_bases():
             df["Nota Padronizada Matemática"].clip(0, 10)
         )
 
-        # N já existe na base e continua sendo a fonte prioritária.
-        # Algumas linhas recentes do CSV analítico vieram com N vazio.
-        # Nesses casos, apenas para uso no painel, preenchemos pela média
-        # das duas notas padronizadas, sem alterar o CSV original.
-        n_calculado = (
-            df["Nota Padronizada LP"] +
-            df["Nota Padronizada Matemática"]
-        ) / 2.0
-
+        # N é um indicador oficial já existente na base.
+        # O dashboard apenas converte seu tipo; nunca recalcula nem substitui N.
         df["N"] = pd.to_numeric(df["N"], errors="coerce")
-        df["N"] = df["N"].fillna(n_calculado)
 
     inv["Investimento por Estudante"] = pd.to_numeric(
         inv["Investimento por Estudante"], errors="coerce"
@@ -2518,6 +2510,89 @@ def grafico_ranking_download(comp, entidade, indicador_label, quantidade="Todos"
     return fig
 
 
+
+def comparativo_ideb_referencias_2025(etapa, valor_barueri):
+    """
+    Referências gerais de 2025 para contextualização executiva.
+    Barueri = Rede Municipal, base do projeto.
+    São Paulo e Brasil = resultado total da etapa (redes públicas e privadas).
+    Estes valores são benchmark e não entram nos rankings municipais.
+    """
+    refs = {
+        "Fundamental I": {
+            "São Paulo": 6.6,
+            "Brasil": 6.3,
+        },
+        "Fundamental II": {
+            "São Paulo": 5.5,
+            "Brasil": 5.3,
+        },
+    }
+
+    dados = refs[etapa]
+    sp = dados["São Paulo"]
+    br = dados["Brasil"]
+
+    cards = st.columns(3)
+
+    cards[0].markdown(
+        f'<div class="metric-card" style="border:2px solid #0E5A70;">'
+        f'<div class="metric-label">Barueri • Rede Municipal</div>'
+        f'<div class="metric-value">{fmt(valor_barueri,1)}</div>'
+        f'<div class="metric-foot">IDEB 2025 • {etapa}</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    dif_sp = float(valor_barueri) - sp if pd.notna(valor_barueri) else np.nan
+    cards[1].markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">Estado de São Paulo • Total</div>'
+        f'<div class="metric-value">{fmt(sp,1)}</div>'
+        f'<div class="metric-foot">'
+        f'Barueri {"+" if pd.notna(dif_sp) and dif_sp > 0 else ""}{fmt(dif_sp,1)} ponto(s) em relação à referência'
+        f'</div></div>',
+        unsafe_allow_html=True
+    )
+
+    dif_br = float(valor_barueri) - br if pd.notna(valor_barueri) else np.nan
+    cards[2].markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">Brasil • Total</div>'
+        f'<div class="metric-value">{fmt(br,1)}</div>'
+        f'<div class="metric-foot">'
+        f'Barueri {"+" if pd.notna(dif_br) and dif_br > 0 else ""}{fmt(dif_br,1)} ponto(s) em relação à referência'
+        f'</div></div>',
+        unsafe_allow_html=True
+    )
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=["Barueri — Municipal", "São Paulo — Total", "Brasil — Total"],
+        y=[valor_barueri, sp, br],
+        text=[fmt(valor_barueri,1), fmt(sp,1), fmt(br,1)],
+        textposition="outside",
+        marker_color=["#0E5A70", "#E9B300", "#50B8D0"]
+    ))
+    fig.update_layout(
+        title=dict(
+            text=f"IDEB 2025 — Barueri × São Paulo × Brasil — {etapa}",
+            x=.01, xanchor="left"
+        ),
+        height=390,
+        margin=dict(l=35, r=25, t=65, b=45),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        showlegend=False,
+        yaxis_title="IDEB"
+    )
+    fig.update_yaxes(
+        range=[0, max(7.5, float(max([valor_barueri, sp, br])) + .7)],
+        gridcolor="#EDF1F4"
+    )
+    return fig
+
+
 def grafico_executivo_ideb_rede(fi, fii):
     fig = go.Figure()
     for df, etapa, cor in [
@@ -2687,10 +2762,50 @@ if pagina == "Visão Geral":
             st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Língua Portuguesa"), use_container_width=True)
             st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Matemática"), use_container_width=True)
 
-        st.markdown('<div class="section-title">Barueri × Estado de São Paulo × Brasil</div>', unsafe_allow_html=True)
-        st.info(
-            "Este bloco fica reservado aos agregados oficiais de 2025. "
-            "Não será usada média simples dos municípios da base como substituta de Estado ou Brasil."
+        st.markdown(
+            '<div class="section-title">Barueri × Estado de São Paulo × Brasil — 2025</div>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Comparação executiva de referência. Barueri representa sua Rede Municipal; "
+            "São Paulo e Brasil representam o resultado total da etapa (redes públicas e privadas). "
+            "Esses valores servem apenas como benchmark e não entram nos rankings municipais."
+        )
+
+        ref_tabs = st.tabs(["Fundamental I", "Fundamental II"])
+
+        with ref_tabs[0]:
+            fig_ref_fi = comparativo_ideb_referencias_2025(
+                "Fundamental I",
+                rfi.get("IDEB")
+            )
+            st.plotly_chart(
+                fig_ref_fi,
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "toImageButtonOptions": {"format": "png", "scale": 2}
+                }
+            )
+
+        with ref_tabs[1]:
+            fig_ref_fii = comparativo_ideb_referencias_2025(
+                "Fundamental II",
+                rfii.get("IDEB")
+            )
+            st.plotly_chart(
+                fig_ref_fii,
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "toImageButtonOptions": {"format": "png", "scale": 2}
+                }
+            )
+
+        st.caption(
+            "Fontes do benchmark 2025: resultados divulgados pelo MEC/Inep em agosto de 2026. "
+            "Barueri: base municipal do Inep utilizada neste projeto. "
+            "Referências de São Paulo e Brasil: resultado total da etapa."
         )
 
         st.markdown('<div class="section-title">Trajetória histórica</div>', unsafe_allow_html=True)
@@ -4018,9 +4133,16 @@ elif pagina == "Metodologia e dados":
 
     with tabs_met[1]:
         st.markdown("#### Da proficiência ao IDEB")
-        st.write("O painel mantém as proficiências originais e acrescenta as notas padronizadas de LP e Matemática na escala 0–10.")
-        st.markdown("**LP padronizada + Matemática padronizada → N; N × P → IDEB.**")
-        st.info("As notas padronizadas são derivadas para visualização; os valores originais da base não são substituídos.")
+        st.write(
+            "O painel mantém as proficiências originais e acrescenta, apenas para visualização, "
+            "as notas padronizadas separadas de Língua Portuguesa e Matemática na escala 0–10."
+        )
+        st.markdown("**N e P são lidos diretamente da base oficial; N × P compõe o IDEB.**")
+        st.info(
+            "O dashboard não recalcula N. Quando N não estiver publicado na linha correspondente, "
+            "o painel mantém a ausência do dado. As notas padronizadas separadas de LP e Matemática "
+            "não substituem o N oficial."
+        )
 
     with tabs_met[2]:
         st.markdown("#### Critérios de comparação")
