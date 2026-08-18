@@ -2505,6 +2505,91 @@ def grafico_ranking_download(comp, entidade, indicador_label, quantidade="Todos"
     fig.update_xaxes(gridcolor="#EDF1F4")
     return fig
 
+
+def grafico_executivo_ideb_rede(fi, fii):
+    fig = go.Figure()
+    for df, etapa, cor in [
+        (fi, "Fundamental I", "#0E5A70"),
+        (fii, "Fundamental II", "#7C3AED"),
+    ]:
+        d = df.copy().sort_values("Ano")
+        fig.add_trace(go.Scatter(
+            x=d["Ano"], y=d["IDEB"], mode="lines+markers+text",
+            name=f"IDEB — {etapa}",
+            text=[fmt(v,1) if pd.notna(v) else "" for v in d["IDEB"]],
+            textposition="top center",
+            line=dict(color=cor, width=3), marker=dict(size=8)
+        ))
+        if "Meta IDEB" in d.columns and d["Meta IDEB"].notna().any():
+            fig.add_trace(go.Scatter(
+                x=d["Ano"], y=d["Meta IDEB"], mode="lines+markers",
+                name=f"Meta — {etapa}",
+                line=dict(color=cor, width=1.8, dash="dot"),
+                marker=dict(size=6), opacity=.72
+            ))
+    estilo_fig(fig, "Evolução do IDEB e metas — Rede Municipal de Barueri", "IDEB", 520)
+    fig.update_yaxes(rangemode="tozero")
+    return fig
+
+
+def card_executivo_variacao(row_atual, row_anterior, etapa):
+    indicadores = [
+        ("IDEB", "IDEB", 1, ""),
+        ("Língua Portuguesa", "Língua Portuguesa", 1, ""),
+        ("Matemática", "Matemática", 1, ""),
+        ("Aprovação", "Aprovação Geral", 1, "%"),
+    ]
+    st.markdown(f'<div style="font-size:16px;font-weight:850;margin:12px 0 8px;">{etapa}</div>',
+                unsafe_allow_html=True)
+    cols = st.columns(4)
+    for col, (rotulo, campo, casas, suf) in zip(cols, indicadores):
+        atual = pd.to_numeric(pd.Series([row_atual.get(campo)]), errors="coerce").iloc[0]
+        ant = pd.to_numeric(pd.Series([row_anterior.get(campo)]), errors="coerce").iloc[0]
+        if pd.notna(atual) and pd.notna(ant):
+            delta = float(atual) - float(ant)
+            seta = "↑" if delta > 0 else "↓" if delta < 0 else "→"
+            cor = "#169B62" if delta > 0 else "#D92D20" if delta < 0 else "#6B7280"
+            delta_txt = f"{seta} {abs(delta):.{casas}f}{suf}".replace(".", ",")
+        else:
+            cor, delta_txt = "#6B7280", "sem comparação"
+        col.markdown(
+            f'<div class="metric-card"><div class="metric-label">{rotulo}</div>'
+            f'<div class="metric-value">{fmt(atual,casas,suf)}</div>'
+            f'<div class="metric-foot" style="color:{cor};font-weight:750;">'
+            f'{delta_txt} desde a aplicação anterior</div></div>',
+            unsafe_allow_html=True
+        )
+
+
+def card_ranking_barueri_executivo(etapa, ano_ini, ano_fim):
+    comp = comp_ranking_municipios_indicador(etapa, "IDEB", ano_ini, ano_fim, "Municipal")
+    universo = ranking_base_municipios_indicador(
+        etapa, ano_fim, "IDEB", "Municipal"
+    )["Município"].nunique()
+    r = comp[comp["Município"] == "Barueri"]
+    if r.empty:
+        st.info(f"Sem posição comparável para {etapa}.")
+        return
+    r = r.iloc[0]
+    pa, pi, vp = r.get("Posição Atual"), r.get("Posição Inicial"), r.get("Variação de Posição")
+    if pd.isna(vp):
+        mov, cor = "sem comparação", "#6B7280"
+    elif vp > 0:
+        mov, cor = f"↑ {int(vp)} posições", "#169B62"
+    elif vp < 0:
+        mov, cor = f"↓ {abs(int(vp))} posições", "#D92D20"
+    else:
+        mov, cor = "→ mesma posição", "#6B7280"
+    anterior = f" • posição anterior: {int(pi)}º" if pd.notna(pi) else ""
+    st.markdown(
+        f'<div class="metric-card"><div class="metric-label">Ranking IDEB • {etapa}</div>'
+        f'<div class="metric-value">{int(pa)}º</div>'
+        f'<div class="metric-foot">entre {universo} municípios com resultado na Rede Municipal em {ano_fim}</div>'
+        f'<div style="margin-top:7px;font-size:12px;font-weight:800;color:{cor};">'
+        f'{mov} desde {ano_ini}{anterior}</div></div>',
+        unsafe_allow_html=True
+    )
+
 def cards_rede(row):
     itens = [
         ("IDEB", row.get("IDEB"), 1, ""),
@@ -2532,341 +2617,80 @@ st.markdown(
 
 pagina = st.radio(
     "Navegação principal",
-    ["Visão da rede","Escolas","Aprendizagem","Território"],
+    ["Visão Geral","Municípios","Escolas","Metodologia e dados"],
     horizontal=True,
     label_visibility="collapsed",
     key="nav_principal"
 )
 
-if pagina == "Visão da rede":
-    st.markdown('<div class="eyebrow">Visão da rede • Barueri municipal</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-title">Rede Municipal de Ensino de Barueri — IDEB e Saeb, 2005–2025</div>', unsafe_allow_html=True)
+sub_municipios = None
+if pagina == "Municípios":
+    sub_municipios = st.segmented_control(
+        "Área municipal",
+        ["Aprendizagem e rankings", "Comparar municípios"],
+        default="Aprendizagem e rankings",
+        selection_mode="single",
+        key="subnav_municipios"
+    ) or "Aprendizagem e rankings"
 
-    etapa = st.segmented_control(
-        "Etapa", ETAPAS, default="Fundamental I",
-        selection_mode="single", label_visibility="collapsed"
-    ) or "Fundamental I"
+if pagina == "Visão Geral":
+    st.markdown('<div class="eyebrow">Visão geral • Rede Municipal de Barueri</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Panorama executivo — IDEB e Saeb</div>', unsafe_allow_html=True)
+    st.caption(
+        "Resumo da rede com resultados recentes, mudança entre as duas últimas aplicações, "
+        "posição no ranking municipal, níveis Saeb e trajetória histórica."
+    )
 
-    sub = st.tabs([
-        "Panorama",
-        "Trajetória e metas",
-        "Fundamental I × Fundamental II",
-        "IDEB, LP e Matemática",
-        "Fluxo e permanência",
-        "Movimento da rede",
-        "Transparência"
-    ])
+    fi = dados_municipio("Barueri", "Fundamental I", rede="Municipal").sort_values("Ano")
+    fii = dados_municipio("Barueri", "Fundamental II", rede="Municipal").sort_values("Ano")
+    anos_fi = sorted(int(a) for a in fi["Ano"].dropna().unique())
+    anos_fii = sorted(int(a) for a in fii["Ano"].dropna().unique())
 
-    base = dados_municipio("Barueri", etapa)
-    anos_disp = sorted(int(a) for a in base["Ano"].dropna().unique())
+    if len(anos_fi) >= 2 and len(anos_fii) >= 2:
+        atual_fi, anterior_fi = anos_fi[-1], anos_fi[-2]
+        atual_fii, anterior_fii = anos_fii[-1], anos_fii[-2]
+        rfi, rfi_ant = ultima_linha(fi, atual_fi), ultima_linha(fi, anterior_fi)
+        rfii, rfii_ant = ultima_linha(fii, atual_fii), ultima_linha(fii, anterior_fii)
 
-    with sub[0]:
-        ano = st.selectbox(
-            "Ano de referência",
-            anos_disp,
-            index=len(anos_disp)-1,
-            key="pan_ano"
-        )
-        row = ultima_linha(base, ano)
+        st.markdown('<div class="section-title">Resultados mais recentes</div>', unsafe_allow_html=True)
+        st.caption(f"Fundamental I: {anterior_fi} → {atual_fi} • Fundamental II: {anterior_fii} → {atual_fii}")
+        card_executivo_variacao(rfi, rfi_ant, "Fundamental I")
+        card_executivo_variacao(rfii, rfii_ant, "Fundamental II")
 
-        if row is not None:
-            st.markdown('<div class="section-title">Síntese da rede</div>', unsafe_allow_html=True)
-            cards_rede(row)
-
-            # metas
-            c1,c2,c3 = st.columns(3)
-            meta_2021 = base.loc[base["Ano"] == 2021, "Meta IDEB"].dropna()
-            ideb_2021 = base.loc[base["Ano"] == 2021, "IDEB"].dropna()
-
-            c1.markdown(
-                f'<div class="metric-card"><div class="metric-label">Meta oficial de 2021</div>'
-                f'<div class="metric-value">{fmt(meta_2021.iloc[-1],1) if not meta_2021.empty else "—"}</div>'
-                f'<div class="metric-foot">Última meta oficial projetada disponível na base.</div></div>',
-                unsafe_allow_html=True
-            )
-            c2.markdown(
-                f'<div class="metric-card"><div class="metric-label">Resultado observado em 2021</div>'
-                f'<div class="metric-value">{fmt(ideb_2021.iloc[-1],1) if not ideb_2021.empty else "—"}</div>'
-                f'<div class="metric-foot">Comparação com a meta oficial de referência.</div></div>',
-                unsafe_allow_html=True
-            )
-            c3.markdown(
-                '<div class="metric-card"><div class="metric-label">Meta para 2023 e 2025</div>'
-                '<div class="metric-value">—</div>'
-                '<div class="metric-foot">Sem meta projetada disponível na base para essas edições.</div></div>',
-                unsafe_allow_html=True
-            )
-
-            # comparação rápida Barueri x recortes
-            st.markdown('<div class="section-title">Comparação rápida</div>', unsafe_allow_html=True)
-            rede_ref = "Municipal"
-            brasil_media, n_brasil = media_rede_recorte(etapa, ano, "IDEB", rede_ref)
-            bar_val = row.get("IDEB")
-            diferenca = (
-                float(bar_val) - brasil_media
-                if pd.notna(bar_val) and pd.notna(brasil_media)
-                else np.nan
-            )
-
-            c1,c2 = st.columns([1,1])
-            c1.metric("Barueri — Municipal", "—" if pd.isna(bar_val) else fmt(bar_val,1))
-            c2.metric(
-                f"Média simples dos municípios — Rede {rede_ref}",
-                "—" if pd.isna(brasil_media) else fmt(brasil_media,1),
-                delta=None if pd.isna(diferenca) else f"{diferenca:+.1f}".replace(".", ",")
-            )
-
-            st.markdown(
-                f'<div class="info">O recorte de referência é calculado como média simples dos '
-                f'{n_brasil} municípios com resultado publicado em {ano}, sempre na mesma etapa, '
-                f'indicador e tipo de rede de Barueri. Não é média oficial ponderada por matrícula.</div>',
-                unsafe_allow_html=True
-            )
-
-            # tabela histórica
-            st.markdown('<div class="section-title">IDEB e aprovação, ano a ano</div>', unsafe_allow_html=True)
-            hist = historico_rede_barueri(etapa).copy()
-            hist = hist.rename(columns={
-                "Aprovação Geral":"Aprovação (%)",
-                "Língua Portuguesa":"Língua Portuguesa",
-                "Matemática":"Matemática"
-            })
-            st.dataframe(
-                hist[["Ano","IDEB","Aprovação (%)","Língua Portuguesa","Matemática"]],
-                hide_index=True,
-                use_container_width=True
-            )
-
-            # escala rápida
-            st.markdown('<div class="section-title">Posição da média da rede na escala do Saeb</div>', unsafe_allow_html=True)
-            c1,c2 = st.columns(2)
-            with c1:
-                st.plotly_chart(fig_escala_saeb(row, etapa, "Língua Portuguesa"), use_container_width=True)
-            with c2:
-                st.plotly_chart(fig_escala_saeb(row, etapa, "Matemática"), use_container_width=True)
-    with sub[1]:
+        st.markdown('<div class="section-title">Posição de Barueri no IDEB</div>', unsafe_allow_html=True)
+        st.caption("Ranking entre municípios com resultado disponível na Rede Municipal.")
         c1, c2 = st.columns(2)
         with c1:
-            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="traj_ini")
-        finais = [a for a in anos_disp if a >= ano_ini]
+            card_ranking_barueri_executivo("Fundamental I", anterior_fi, atual_fi)
         with c2:
-            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="traj_fim")
-        d = base[base["Ano"].between(ano_ini, ano_fim)]
-        st.plotly_chart(grafico_ideb_meta(d, f"IDEB e metas — {ano_ini}–{ano_fim}"), use_container_width=True)
+            card_ranking_barueri_executivo("Fundamental II", anterior_fii, atual_fii)
 
-    with sub[2]:
-        st.markdown('<div class="section-title">Fundamental I × Fundamental II</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="hero-sub">Comparação das duas etapas da Rede Municipal de Barueri no mesmo gráfico, '
-            'com seleção livre do período entre 2005 e 2025.</div>',
-            unsafe_allow_html=True
+        st.markdown('<div class="section-title">Onde Barueri está na escala Saeb</div>', unsafe_allow_html=True)
+        st.caption("A interpretação detalhada dos níveis fica em Metodologia e dados.")
+        t1, t2 = st.tabs(["Fundamental I", "Fundamental II"])
+        with t1:
+            st.plotly_chart(fig_escala_saeb(rfi, "Fundamental I", "Língua Portuguesa"), use_container_width=True)
+            st.plotly_chart(fig_escala_saeb(rfi, "Fundamental I", "Matemática"), use_container_width=True)
+        with t2:
+            st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Língua Portuguesa"), use_container_width=True)
+            st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Matemática"), use_container_width=True)
+
+        st.markdown('<div class="section-title">Barueri × Estado de São Paulo × Brasil</div>', unsafe_allow_html=True)
+        st.info(
+            "Este bloco fica reservado aos agregados oficiais de 2025. "
+            "Não será usada média simples dos municípios da base como substituta de Estado ou Brasil."
         )
 
-        base_fi = dados_municipio("Barueri", "Fundamental I", rede="Municipal")
-        base_fii = dados_municipio("Barueri", "Fundamental II", rede="Municipal")
-
-        anos_comp = sorted(
-            set(int(a) for a in base_fi["Ano"].dropna().unique())
-            | set(int(a) for a in base_fii["Ano"].dropna().unique())
-        )
-
-        c1, c2 = st.columns(2)
-        with c1:
-            comp_ini = st.selectbox(
-                "Ano inicial",
-                anos_comp,
-                index=0,
-                key="fi_fii_ini"
-            )
-
-        finais_comp = [a for a in anos_comp if a >= comp_ini]
-
-        with c2:
-            comp_fim = st.selectbox(
-                "Ano final",
-                finais_comp,
-                index=len(finais_comp)-1,
-                key="fi_fii_fim"
-            )
-
-        fi = base_fi[base_fi["Ano"].between(comp_ini, comp_fim)].copy()
-        fii = base_fii[base_fii["Ano"].between(comp_ini, comp_fim)].copy()
-
-        tabs_comp = st.tabs([
-            "IDEB",
-            "Língua Portuguesa",
-            "Matemática",
-            "LP padronizada",
-            "MAT padronizada",
-            "Aprovação",
-            "N",
-            "P"
-        ])
-
-        with tabs_comp[0]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "IDEB",
-                    f"IDEB — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=1,
-                    metas=True
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[1]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "Língua Portuguesa",
-                    f"Língua Portuguesa — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=1
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[2]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "Matemática",
-                    f"Matemática — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=1
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[3]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "Nota Padronizada LP",
-                    f"LP padronizada (0–10) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=2
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[4]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "Nota Padronizada Matemática",
-                    f"Matemática padronizada (0–10) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=2
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[5]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "Aprovação Geral",
-                    f"Aprovação Geral — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=1
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[6]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "N",
-                    f"Nota Média Padronizada (N) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=2
-                ),
-                use_container_width=True
-            )
-
-        with tabs_comp[7]:
-            st.plotly_chart(
-                grafico_comparacao_etapas(
-                    fi, fii, "P",
-                    f"Indicador de Rendimento (P) — Fundamental I × Fundamental II — {comp_ini}–{comp_fim}",
-                    casas=3
-                ),
-                use_container_width=True
-            )
-
-    with sub[3]:
-        c1, c2 = st.columns(2)
-        with c1:
-            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="lp_ini")
-        finais = [a for a in anos_disp if a >= ano_ini]
-        with c2:
-            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="lp_fim")
-        d = base[base["Ano"].between(ano_ini, ano_fim)]
-        row = ultima_linha(d)
-        if row is not None:
-            cards_rede(row)
+        st.markdown('<div class="section-title">Trajetória histórica</div>', unsafe_allow_html=True)
         st.plotly_chart(
-            grafico_lp_mat(
-                d,
-                f"Língua Portuguesa × Matemática — {etapa}"
-            ),
-            use_container_width=True
+            grafico_executivo_ideb_rede(fi, fii),
+            use_container_width=True,
+            config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}}
         )
+        st.caption("As metas aparecem somente nos anos em que estão disponíveis na base.")
+    else:
+        st.info("Não há duas aplicações disponíveis para montar a síntese executiva.")
 
-        st.markdown(
-            '<div class="section-title">Composição e evolução do IDEB</div>',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            '<div class="hero-sub">N e IDEB têm escalas próximas e aparecem juntos. '
-            'O indicador P é mostrado separadamente para não distorcer a leitura. '
-            'Como se trata da mesma rede ao longo dos anos, a linha representa evolução temporal.</div>',
-            unsafe_allow_html=True
-        )
-
-        st.plotly_chart(
-            grafico_notas_padronizadas_componentes(
-                d,
-                f"LP e Matemática padronizadas (0–10) — {etapa}"
-            ),
-            use_container_width=True
-        )
-
-        st.plotly_chart(
-            grafico_composicao_ideb_temporal(
-                d,
-                f"Nota Média Padronizada (N) e IDEB — {etapa}"
-            ),
-            use_container_width=True
-        )
-        st.plotly_chart(
-            grafico_p_temporal(
-                d,
-                f"Indicador de Rendimento (P) — {etapa}"
-            ),
-            use_container_width=True
-        )
-
-    with sub[4]:
-        c1, c2 = st.columns(2)
-        with c1:
-            ano_ini = st.selectbox("Ano inicial", anos_disp, index=0, key="fl_ini")
-        finais = [a for a in anos_disp if a >= ano_ini]
-        with c2:
-            ano_fim = st.selectbox("Ano final", finais, index=len(finais)-1, key="fl_fim")
-        d = base[base["Ano"].between(ano_ini, ano_fim)]
-        st.plotly_chart(grafico_aprovacao_linhas(d, etapa, f"Taxa de aprovação por série — {etapa}"), use_container_width=True)
-        st.plotly_chart(grafico_aprovacao_series_p(d, etapa, f"Aprovação por série × Indicador de Rendimento (P) — {etapa}"), use_container_width=True)
-
-    with sub[5]:
-        st.markdown('<div class="section-title">Movimento da rede</div>', unsafe_allow_html=True)
-        st.markdown('<div class="note">A base atual não contém diretamente as variáveis de estabilidade/movimento das unidades mostradas no modelo visual. Esta área ficou reservada para essa incorporação.</div>', unsafe_allow_html=True)
-
-    with sub[6]:
-        st.dataframe(
-            base[["Ano","Rede","Etapa","IDEB","Meta IDEB","Matemática","Língua Portuguesa","N","P","Aprovação Geral"]],
-            hide_index=True, use_container_width=True
-        )
-        inv = investimento[investimento["Etapa"] == etapa].sort_values("Ano")
-        if not inv.empty:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=inv["Ano"], y=inv["Investimento por Estudante"],
-                mode="lines+markers", name="Investimento por estudante",
-                line=dict(color=AZUL, width=3)
-            ))
-            estilo_fig(fig, f"Investimento por estudante — referência INEP ({etapa})", "R$ por estudante", 430)
-            st.plotly_chart(fig, use_container_width=True)
 
 elif pagina == "Escolas":
     st.markdown('<div class="eyebrow">Escolas</div>', unsafe_allow_html=True)
@@ -3174,8 +2998,8 @@ elif pagina == "Escolas":
 
     painel_escolas()
 
-elif pagina == "Aprendizagem":
-    st.markdown('<div class="eyebrow">Aprendizagem</div>', unsafe_allow_html=True)
+elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
+    st.markdown('<div class="eyebrow">Municípios • Aprendizagem e rankings</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-title">Diagnóstico, níveis de proficiência e rankings</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="hero-sub">Acompanhe a aprendizagem em Língua Portuguesa e Matemática, '
@@ -3812,8 +3636,8 @@ elif pagina == "Aprendizagem":
 
     painel_aprendizagem()
 
-elif pagina == "Território":
-    st.markdown('<div class="eyebrow">Território</div>', unsafe_allow_html=True)
+elif pagina == "Municípios" and sub_municipios == "Comparar municípios":
+    st.markdown('<div class="eyebrow">Municípios • Comparações</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-title">Barueri no contexto regional e estadual</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-sub">A busca por município ignora acentos. Barueri permanece como referência.</div>', unsafe_allow_html=True)
 
@@ -4089,6 +3913,43 @@ elif pagina == "Território":
 
 
     painel_territorio()
+
+
+elif pagina == "Metodologia e dados":
+    st.markdown('<div class="eyebrow">Metodologia e dados</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Como interpretar os indicadores do painel</div>', unsafe_allow_html=True)
+
+    tabs_met = st.tabs(["Escalas Saeb", "IDEB e notas padronizadas", "Critérios de comparação", "Fontes e dados"])
+
+    with tabs_met[0]:
+        st.markdown("#### Escalas de proficiência")
+        st.write("As proficiências de Língua Portuguesa e Matemática permanecem na escala original do Saeb.")
+        etapa_met = st.segmented_control(
+            "Etapa", ETAPAS, default="Fundamental I",
+            selection_mode="single", key="met_etapa"
+        ) or "Fundamental I"
+        st.dataframe(
+            pd.DataFrame(FAIXAS_NIVEIS[etapa_met], columns=["Nível", "Faixa de proficiência"]),
+            hide_index=True, use_container_width=True
+        )
+
+    with tabs_met[1]:
+        st.markdown("#### Da proficiência ao IDEB")
+        st.write("O painel mantém as proficiências originais e acrescenta as notas padronizadas de LP e Matemática na escala 0–10.")
+        st.markdown("**LP padronizada + Matemática padronizada → N; N × P → IDEB.**")
+        st.info("As notas padronizadas são derivadas para visualização; os valores originais da base não são substituídos.")
+
+    with tabs_met[2]:
+        st.markdown("#### Critérios de comparação")
+        st.write("Municípios são comparados com municípios e escolas com escolas. As redes permanecem separadas quando necessário.")
+        st.write("Nos rankings, posição inicial e final usam o mesmo universo. Ao excluir ITBs, as posições das escolas são recalculadas.")
+        st.write("Ausências são mantidas como ausência; o painel não estima resultados.")
+
+    with tabs_met[3]:
+        st.markdown("#### Bases do projeto")
+        st.write("O painel utiliza as bases municipais e escolares tratadas previamente no Google Colab.")
+        st.write("Estado de São Paulo e Brasil serão incluídos na Visão Geral apenas com agregados oficiais de 2025.")
+        st.caption("Os downloads respeitam os filtros aplicados.")
 
 st.markdown(
     '<div class="footer">Painel educacional • dados organizados a partir das bases SAEB/IDEB fornecidas para o projeto.</div>',
