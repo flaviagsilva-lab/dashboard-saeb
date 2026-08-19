@@ -1,7 +1,4 @@
 
-
-
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -281,17 +278,24 @@ def grafico_lp_mat(df, titulo, modo="linhas"):
     fig = go.Figure()
     if modo == "linhas":
         fig.add_trace(go.Scatter(
-            x=df["Ano"], y=df["Língua Portuguesa"], mode="lines+markers+text",
-            text=[fmt(v,1) if pd.notna(v) else "" for v in df["Língua Portuguesa"]],
-            textposition="top center", name="Língua Portuguesa",
+            x=df["Ano"], y=df["Língua Portuguesa"], mode="lines+markers",
+            name="Língua Portuguesa",
             line=dict(color=ROSA, width=3), marker=dict(size=8)
         ))
+        adicionar_rotulos_acima(
+            fig, df["Ano"], df["Língua Portuguesa"],
+            casas=1, cor=ROSA, yshift=16
+        )
+
         fig.add_trace(go.Scatter(
-            x=df["Ano"], y=df["Matemática"], mode="lines+markers+text",
-            text=[fmt(v,1) if pd.notna(v) else "" for v in df["Matemática"]],
-            textposition="bottom center", name="Matemática",
+            x=df["Ano"], y=df["Matemática"], mode="lines+markers",
+            name="Matemática",
             line=dict(color=LILAS, width=3), marker=dict(size=8)
         ))
+        adicionar_rotulos_acima(
+            fig, df["Ano"], df["Matemática"],
+            casas=1, cor=LILAS, yshift=32
+        )
     else:
         fig.add_trace(go.Bar(x=df["Ano"], y=df["Língua Portuguesa"], name="Língua Portuguesa", marker_color=ROSA))
         fig.add_trace(go.Bar(x=df["Ano"], y=df["Matemática"], name="Matemática", marker_color=LILAS))
@@ -353,7 +357,7 @@ def grafico_np_ideb(df, titulo):
     fig.add_trace(go.Scatter(
         x=df["Ano"], y=df["IDEB"], name="IDEB", mode="lines+markers+text",
         text=[fmt(v,1) if pd.notna(v) else "" for v in df["IDEB"]],
-        textposition="bottom center", line=dict(color=LARANJA, width=3), marker=dict(size=8)
+        textposition="top center", line=dict(color=LARANJA, width=3), marker=dict(size=8)
     ))
     fig.add_trace(go.Scatter(
         x=df["Ano"], y=df["P"], name="Indicador de Rendimento (P)",
@@ -368,29 +372,59 @@ def grafico_np_ideb(df, titulo):
 def grafico_comparacao_lp_mat(df1, nome1, df2, nome2, titulo):
     fig = go.Figure()
     traces = [
-        (df1, "Língua Portuguesa", f"{nome1} — LP", ROSA, "top center"),
-        (df1, "Matemática", f"{nome1} — Matemática", LILAS, "bottom center"),
-        (df2, "Língua Portuguesa", f"{nome2} — LP", AZUL_COMP, "top center"),
-        (df2, "Matemática", f"{nome2} — Matemática", VERDE_COMP, "bottom center"),
+        (df1, "Língua Portuguesa", f"{nome1} — LP", ROSA, 14),
+        (df1, "Matemática", f"{nome1} — Matemática", LILAS, 26),
+        (df2, "Língua Portuguesa", f"{nome2} — LP", AZUL_COMP, 38),
+        (df2, "Matemática", f"{nome2} — Matemática", VERDE_COMP, 50),
     ]
-    for d, col, nome, cor, pos in traces:
+
+    for d, col, nome, cor, deslocamento in traces:
         fig.add_trace(go.Scatter(
-            x=d["Ano"], y=d[col], mode="lines+markers+text", name=nome,
-            text=[fmt(v,1) if pd.notna(v) else "" for v in d[col]],
-            textposition=pos, line=dict(color=cor, width=3), marker=dict(size=8)
+            x=d["Ano"],
+            y=d[col],
+            mode="lines+markers",
+            name=nome,
+            line=dict(color=cor, width=3),
+            marker=dict(size=8)
         ))
-    return estilo_fig(fig, titulo, "Proficiência SAEB", 540)
+        adicionar_rotulos_acima(
+            fig, d["Ano"], d[col],
+            casas=1, cor=cor, yshift=deslocamento
+        )
+
+    fig = estilo_fig(fig, titulo, "Proficiência SAEB", 570)
+    fig.update_layout(margin=dict(l=35, r=35, t=100, b=45))
+    return fig
+
 
 def grafico_comparacao_indicador(datasets, indicador, titulo):
     fig = go.Figure()
     cores = [AZUL, AZUL_COMP, VERDE_COMP, ROSA, LILAS, LARANJA]
+
+    casas = 1 if indicador in ["IDEB", "Aprovação Geral"] else 2
+
     for i, (nome, df) in enumerate(datasets):
+        cor = cores[i % len(cores)]
         fig.add_trace(go.Scatter(
-            x=df["Ano"], y=df[indicador], mode="lines+markers+text", name=nome,
-            text=[fmt(v,2 if indicador not in ["IDEB","Aprovação Geral"] else 1) if pd.notna(v) else "" for v in df[indicador]],
-            textposition="top center", line=dict(color=cores[i % len(cores)], width=3), marker=dict(size=8)
+            x=df["Ano"],
+            y=df[indicador],
+            mode="lines+markers",
+            name=nome,
+            line=dict(color=cor, width=3),
+            marker=dict(size=8)
         ))
-    return estilo_fig(fig, titulo, indicador, 515)
+        adicionar_rotulos_acima(
+            fig,
+            df["Ano"],
+            df[indicador],
+            casas=casas,
+            cor=cor,
+            yshift=14 + (i * 12)
+        )
+
+    fig = estilo_fig(fig, titulo, indicador, 545)
+    fig.update_layout(margin=dict(l=35, r=35, t=100, b=45))
+    return fig
 
 
 def grafico_comparacao_etapas(df_fi, df_fii, indicador, titulo, casas=2, metas=False):
@@ -398,23 +432,27 @@ def grafico_comparacao_etapas(df_fi, df_fii, indicador, titulo, casas=2, metas=F
 
     fig.add_trace(go.Scatter(
         x=df_fi["Ano"], y=df_fi[indicador],
-        mode="lines+markers+text",
+        mode="lines+markers",
         name=f"Fundamental I — {indicador}",
-        text=[fmt(v, casas) if pd.notna(v) else "" for v in df_fi[indicador]],
-        textposition="top center",
         line=dict(color=AZUL, width=3),
         marker=dict(size=8)
     ))
+    adicionar_rotulos_acima(
+        fig, df_fi["Ano"], df_fi[indicador],
+        casas=casas, cor=AZUL, yshift=16
+    )
 
     fig.add_trace(go.Scatter(
         x=df_fii["Ano"], y=df_fii[indicador],
-        mode="lines+markers+text",
+        mode="lines+markers",
         name=f"Fundamental II — {indicador}",
-        text=[fmt(v, casas) if pd.notna(v) else "" for v in df_fii[indicador]],
-        textposition="bottom center",
         line=dict(color=LILAS, width=3),
         marker=dict(size=8)
     ))
+    adicionar_rotulos_acima(
+        fig, df_fii["Ano"], df_fii[indicador],
+        casas=casas, cor=LILAS, yshift=32
+    )
 
     if metas and "Meta IDEB" in df_fi.columns and "Meta IDEB" in df_fii.columns:
         if df_fi["Meta IDEB"].notna().any():
@@ -433,7 +471,8 @@ def grafico_comparacao_etapas(df_fi, df_fii, indicador, titulo, casas=2, metas=F
             ))
 
     ytitle = "Taxa de aprovação (%)" if indicador == "Aprovação Geral" else indicador
-    fig = estilo_fig(fig, titulo, ytitle, 500)
+    fig = estilo_fig(fig, titulo, ytitle, 530)
+    fig.update_layout(margin=dict(l=35, r=35, t=100, b=45))
 
     if indicador == "Aprovação Geral":
         fig.update_yaxes(range=[0, 105])
@@ -441,1083 +480,6 @@ def grafico_comparacao_etapas(df_fi, df_fii, indicador, titulo, casas=2, metas=F
     return fig
 
 
-
-CORES_NIVEIS_FI = {
-    0: "#B71C1C",
-    1: "#D32F2F",
-    2: "#EF5350",
-    3: "#FF7043",
-    4: "#FFA726",
-    5: "#FFCA28",
-    6: "#D4E157",
-    7: "#9CCC65",
-    8: "#66BB6A",
-    9: "#43A047",
-    10: "#1B5E20",
-}
-
-CORES_NIVEIS_FII = {
-    0: "#B71C1C",
-    1: "#D32F2F",
-    2: "#EF5350",
-    3: "#FF7043",
-    4: "#FFA726",
-    5: "#FFCA28",
-    6: "#9CCC65",
-    7: "#66BB6A",
-    8: "#43A047",
-    9: "#1B5E20",
-}
-
-FAIXAS_NIVEIS = {
-    "Fundamental I": [
-        (0, "Abaixo de 125"),
-        (1, "125 a < 150"),
-        (2, "150 a < 175"),
-        (3, "175 a < 200"),
-        (4, "200 a < 225"),
-        (5, "225 a < 250"),
-        (6, "250 a < 275"),
-        (7, "275 a < 300"),
-        (8, "300 a < 325"),
-        (9, "325 a < 350"),
-        (10, "350 ou mais"),
-    ],
-    "Fundamental II": [
-        (0, "Abaixo de 200"),
-        (1, "200 a < 225"),
-        (2, "225 a < 250"),
-        (3, "250 a < 275"),
-        (4, "275 a < 300"),
-        (5, "300 a < 325"),
-        (6, "325 a < 350"),
-        (7, "350 a < 375"),
-        (8, "375 a < 400"),
-        (9, "400 ou mais"),
-    ],
-}
-
-# Padrões de desempenho que já havíamos definido na preparação das bases.
-# As faixas são diferentes entre Língua Portuguesa e Matemática.
-PADROES_DESEMPENHO = {
-    "Língua Portuguesa": {
-        "Fundamental I": [
-            ("Abaixo do básico", "Até 179"),
-            ("Básico", "180 a 219"),
-            ("Adequado", "220 a 259"),
-            ("Avançado", "260 ou mais"),
-        ],
-        "Fundamental II": [
-            ("Abaixo do básico", "Até 224"),
-            ("Básico", "225 a 274"),
-            ("Adequado", "275 a 324"),
-            ("Avançado", "325 ou mais"),
-        ],
-    },
-    "Matemática": {
-        "Fundamental I": [
-            ("Abaixo do básico", "Até 204"),
-            ("Básico", "205 a 244"),
-            ("Adequado", "245 a 284"),
-            ("Avançado", "285 ou mais"),
-        ],
-        "Fundamental II": [
-            ("Abaixo do básico", "Até 224"),
-            ("Básico", "225 a 299"),
-            ("Adequado", "300 a 349"),
-            ("Avançado", "350 ou mais"),
-        ],
-    },
-}
-
-EXPLICACAO_PADROES = {
-    "Abaixo do básico": (
-        "Resultado situado abaixo do patamar básico definido para a etapa. "
-        "Indica necessidade de atenção prioritária às aprendizagens essenciais."
-    ),
-    "Básico": (
-        "Resultado dentro do patamar básico. Há aprendizagens consolidadas, "
-        "mas ainda existem habilidades importantes a desenvolver."
-    ),
-    "Adequado": (
-        "Resultado compatível com o patamar adequado para a etapa, indicando "
-        "maior consolidação das aprendizagens avaliadas."
-    ),
-    "Avançado": (
-        "Resultado acima do patamar adequado, com desempenho elevado na escala "
-        "de proficiência considerada."
-    ),
-}
-
-
-def cores_niveis(etapa):
-    return CORES_NIVEIS_FI if etapa == "Fundamental I" else CORES_NIVEIS_FII
-
-def colunas_disciplina(disciplina):
-    if disciplina == "Matemática":
-        return "Matemática", "Nível Matemática", "Padrão Matemática"
-    return "Língua Portuguesa", "Nível Língua Portuguesa", "Padrão Língua Portuguesa"
-
-def texto_movimento(valor):
-    if pd.isna(valor):
-        return "—"
-    valor = int(valor)
-    if valor > 0:
-        return f"↑ {valor}"
-    if valor < 0:
-        return f"↓ {abs(valor)}"
-    return "= 0"
-
-def texto_mudanca_nivel(valor):
-    if pd.isna(valor):
-        return "—"
-    valor = int(valor)
-    if valor > 0:
-        return f"↑ {valor} nível" if valor == 1 else f"↑ {valor} níveis"
-    if valor < 0:
-        n = abs(valor)
-        return f"↓ {n} nível" if n == 1 else f"↓ {n} níveis"
-    return "manteve"
-
-
-def cor_padrao(padrao):
-    return {
-        "Abaixo do básico": "#D32F2F",
-        "Básico": "#FFA726",
-        "Adequado": "#66BB6A",
-        "Avançado": "#1B5E20",
-    }.get(padrao, "#BDBDBD")
-
-def painel_padrao_disciplina(disciplina, etapa):
-    """
-    Exibe a escala de interpretação usada no projeto para a disciplina e etapa.
-    Não mostra código de cor; mostra faixa, padrão e significado.
-    """
-    st.markdown(
-        f'<div class="section-title">{disciplina} — {etapa}</div>',
-        unsafe_allow_html=True
-    )
-
-    colunas = st.columns(4)
-
-    for col, (padrao, faixa) in zip(
-        colunas,
-        PADROES_DESEMPENHO[disciplina][etapa]
-    ):
-        cor = cor_padrao(padrao)
-        significado = EXPLICACAO_PADROES[padrao]
-
-        col.markdown(
-            f'<div class="metric-card" style="border-top:5px solid {cor};min-height:210px;">'
-            f'<div class="metric-label">{padrao}</div>'
-            f'<div class="metric-value" style="font-size:20px;">{faixa}</div>'
-            f'<div class="metric-foot" style="font-size:13px;line-height:1.45;">'
-            f'{significado}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-def localizar_padrao(valor, disciplina, etapa):
-    if pd.isna(valor):
-        return None
-
-    valor = float(valor)
-
-    if disciplina == "Língua Portuguesa":
-        if etapa == "Fundamental I":
-            if valor <= 179:
-                return "Abaixo do básico"
-            if valor <= 219:
-                return "Básico"
-            if valor <= 259:
-                return "Adequado"
-            return "Avançado"
-
-        if valor <= 224:
-            return "Abaixo do básico"
-        if valor <= 274:
-            return "Básico"
-        if valor <= 324:
-            return "Adequado"
-        return "Avançado"
-
-    if etapa == "Fundamental I":
-        if valor <= 204:
-            return "Abaixo do básico"
-        if valor <= 244:
-            return "Básico"
-        if valor <= 284:
-            return "Adequado"
-        return "Avançado"
-
-    if valor <= 224:
-        return "Abaixo do básico"
-    if valor <= 299:
-        return "Básico"
-    if valor <= 349:
-        return "Adequado"
-    return "Avançado"
-
-def card_situacao_atual(disciplina, valor, nivel, etapa, padrao_base=None):
-    padrao = padrao_base
-    if pd.isna(padrao) or str(padrao).strip() in {"", "<NA>", "nan"}:
-        padrao = localizar_padrao(valor, disciplina, etapa)
-
-    cor = cor_padrao(padrao)
-
-    valor_txt = fmt(valor, 2)
-    nivel_txt = "—" if pd.isna(nivel) else f"Nível {int(float(nivel))}"
-
-    return (
-        f'<div class="metric-card" style="border-top:5px solid {cor};min-height:160px;">'
-        f'<div class="metric-label">{disciplina}</div>'
-        f'<div class="metric-value">{valor_txt}</div>'
-        f'<div class="metric-foot"><b>{nivel_txt}</b> • {padrao or "—"}</div>'
-        f'</div>'
-    )
-
-def legenda_niveis_html(etapa):
-    """
-    Gera a legenda em HTML sem indentação inicial.
-    Isso evita que o Markdown interprete o HTML como bloco de código.
-    """
-    cores = cores_niveis(etapa)
-    blocos = []
-
-    for nivel, faixa in FAIXAS_NIVEIS[etapa]:
-        blocos.append(
-            f'<div style="display:flex;align-items:center;gap:8px;'
-            f'border:1px solid #E5E7EB;background:white;'
-            f'border-radius:9px;padding:7px 9px;">'
-            f'<span style="width:14px;height:14px;border-radius:3px;'
-            f'background:{cores[nivel]};display:inline-block;"></span>'
-            f'<span style="font-weight:700;font-size:12px;">Nível {nivel}</span>'
-            f'<span style="font-size:11px;color:#6B7280;">{faixa}</span>'
-            f'</div>'
-        )
-
-    return (
-        '<div style="display:grid;'
-        'grid-template-columns:repeat(auto-fit,minmax(170px,1fr));'
-        'gap:7px;margin:8px 0 14px 0;">'
-        + "".join(blocos)
-        + '</div>'
-    )
-
-def ranking_municipios_ano(etapa, ano, disciplina, rede_comparacao):
-    """
-    Ranking municipal com filtro EXPLÍCITO de rede.
-
-    Importante:
-    - os municípios comparados pertencem somente à rede selecionada;
-    - não há prioridade automática entre redes;
-    - Barueri (Municipal) é tratada separadamente como referência.
-    """
-    coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
-
-    x = municipios[
-        (municipios["Etapa"] == etapa) &
-        (municipios["Ano"] == ano) &
-        (municipios["Rede"] == rede_comparacao)
-    ].copy()
-
-    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
-    x = x.dropna(subset=[coluna])
-
-    # Mantém um registro por município dentro da MESMA rede.
-    x = (
-        x.sort_values(
-            ["Município", coluna],
-            ascending=[True, False]
-        )
-        .drop_duplicates("Município", keep="first")
-        .copy()
-    )
-
-    x["Posição"] = (
-        x[coluna]
-        .rank(method="min", ascending=False)
-        .astype("Int64")
-    )
-
-    return (
-        x[
-            [
-                "Município",
-                "Rede",
-                coluna,
-                coluna_nivel,
-                coluna_padrao,
-                "Posição",
-            ]
-        ]
-        .sort_values(["Posição", "Município"])
-        .reset_index(drop=True)
-    )
-
-def referencia_barueri_ano(etapa, ano, disciplina):
-    """
-    Retorna Barueri SEMPRE como Rede Municipal,
-    independentemente da rede usada para comparar os demais municípios.
-    """
-    coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
-
-    x = municipios[
-        (municipios["Município"] == "Barueri") &
-        (municipios["Rede"] == "Municipal") &
-        (municipios["Etapa"] == etapa) &
-        (municipios["Ano"] == ano)
-    ].copy()
-
-    if x.empty:
-        return None
-
-    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
-    x = x.dropna(subset=[coluna])
-
-    if x.empty:
-        return None
-
-    r = x.sort_values(coluna, ascending=False).iloc[0]
-
-    return {
-        "Município": "Barueri",
-        "Rede": "Municipal",
-        "Pontuação": r.get(coluna),
-        "Nível": r.get(coluna_nivel),
-        "Padrão": r.get(coluna_padrao),
-    }
-
-def posicao_referencia_no_universo(valor_referencia, ranking_rede, disciplina):
-    """
-    Calcula em qual posição a pontuação de Barueri Municipal ficaria
-    dentro do universo da rede selecionada.
-    """
-    if valor_referencia is None or pd.isna(valor_referencia):
-        return pd.NA
-
-    coluna, _, _ = colunas_disciplina(disciplina)
-
-    valores = pd.to_numeric(
-        ranking_rede[coluna],
-        errors="coerce"
-    ).dropna()
-
-    if valores.empty:
-        return pd.NA
-
-    # rank method=min: 1 + quantidade de valores estritamente maiores.
-    return int((valores > float(valor_referencia)).sum() + 1)
-
-
-def ranking_escolas_ano(etapa, ano, disciplina):
-    coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
-
-    x = escolas[
-        (escolas["Etapa"] == etapa) &
-        (escolas["Ano"] == ano)
-    ].copy()
-
-    x[coluna] = pd.to_numeric(x[coluna], errors="coerce")
-    x = x.dropna(subset=[coluna])
-
-    # Caso alguma unidade apareça duplicada no mesmo ano/etapa,
-    # preserva o registro com valor válido e maior proficiência.
-    x = (
-        x.sort_values(
-            ["Escola", coluna],
-            ascending=[True, False]
-        )
-        .drop_duplicates("Escola", keep="first")
-        .copy()
-    )
-
-    x["Posição"] = (
-        x[coluna]
-        .rank(method="min", ascending=False)
-        .astype("Int64")
-    )
-
-    return (
-        x[
-            [
-                "Escola",
-                coluna,
-                coluna_nivel,
-                coluna_padrao,
-                "Posição",
-            ]
-        ]
-        .sort_values(["Posição", "Escola"])
-        .reset_index(drop=True)
-    )
-
-def comparar_rankings(
-    entidade,
-    etapa,
-    disciplina,
-    ano_ini,
-    ano_fim,
-    rede_comparacao=None
-):
-    coluna, coluna_nivel, coluna_padrao = colunas_disciplina(disciplina)
-
-    if entidade == "Município":
-        if rede_comparacao is None:
-            raise ValueError("rede_comparacao é obrigatória para ranking de municípios.")
-
-        ini = ranking_municipios_ano(
-            etapa,
-            ano_ini,
-            disciplina,
-            rede_comparacao
-        )
-        fim = ranking_municipios_ano(
-            etapa,
-            ano_fim,
-            disciplina,
-            rede_comparacao
-        )
-        chave = "Município"
-
-        ini = ini[
-            [chave, "Rede", coluna, coluna_nivel, coluna_padrao, "Posição"]
-        ].copy()
-        fim = fim[
-            [chave, "Rede", coluna, coluna_nivel, coluna_padrao, "Posição"]
-        ].copy()
-
-    else:
-        ini = ranking_escolas_ano(etapa, ano_ini, disciplina)
-        fim = ranking_escolas_ano(etapa, ano_fim, disciplina)
-
-        if not incluir_itbs:
-            ini = ini.loc[~mascara_itb(ini["Escola"])].copy()
-            fim = fim.loc[~mascara_itb(fim["Escola"])].copy()
-
-            # Recalcula as posições dentro do universo sem ITBs.
-            coluna_disc, _, _ = colunas_disciplina(disciplina)
-            ini["Posição"] = (
-                pd.to_numeric(ini[coluna_disc], errors="coerce")
-                .rank(method="min", ascending=False)
-                .astype("Int64")
-            )
-            fim["Posição"] = (
-                pd.to_numeric(fim[coluna_disc], errors="coerce")
-                .rank(method="min", ascending=False)
-                .astype("Int64")
-            )
-        chave = "Escola"
-
-        ini = ini[
-            [chave, coluna, coluna_nivel, coluna_padrao, "Posição"]
-        ].copy()
-        fim = fim[
-            [chave, coluna, coluna_nivel, coluna_padrao, "Posição"]
-        ].copy()
-
-    ren_ini = {
-        coluna: "Pontuação Inicial",
-        coluna_nivel: "Nível Inicial",
-        coluna_padrao: "Padrão Inicial",
-        "Posição": "Posição Inicial",
-    }
-
-    ren_fim = {
-        coluna: "Pontuação Atual",
-        coluna_nivel: "Nível Atual",
-        coluna_padrao: "Padrão Atual",
-        "Posição": "Posição Atual",
-    }
-
-    if entidade == "Município":
-        ren_ini["Rede"] = "Rede Inicial"
-        ren_fim["Rede"] = "Rede Atual"
-
-    ini = ini.rename(columns=ren_ini)
-    fim = fim.rename(columns=ren_fim)
-
-    comp = fim.merge(
-        ini,
-        on=chave,
-        how="left"
-    )
-
-    comp["Variação de Posição"] = (
-        comp["Posição Inicial"] - comp["Posição Atual"]
-    )
-
-    comp["Variação de Nível"] = (
-        pd.to_numeric(comp["Nível Atual"], errors="coerce") -
-        pd.to_numeric(comp["Nível Inicial"], errors="coerce")
-    )
-
-    comp["Movimento"] = comp["Variação de Posição"].apply(texto_movimento)
-    comp["Mudança de Nível"] = comp["Variação de Nível"].apply(texto_mudanca_nivel)
-
-    comp["Nível Atual Texto"] = comp["Nível Atual"].apply(
-        lambda x: "—" if pd.isna(x) else f"Nível {int(x)}"
-    )
-
-    comp["Nível Inicial Texto"] = comp["Nível Inicial"].apply(
-        lambda x: "—" if pd.isna(x) else f"Nível {int(x)}"
-    )
-
-    return comp.sort_values(
-        ["Posição Atual", chave]
-    ).reset_index(drop=True)
-
-
-
-def adicionar_barueri_referencia(
-    comp,
-    etapa,
-    disciplina,
-    ano_ini,
-    ano_fim,
-    rede_comparacao
-):
-    """
-    Adiciona Barueri Municipal à tabela comparativa como referência.
-    Sua posição é calculada dentro do universo da rede escolhida.
-    """
-    bar_ini = referencia_barueri_ano(
-        etapa,
-        ano_ini,
-        disciplina
-    )
-    bar_fim = referencia_barueri_ano(
-        etapa,
-        ano_fim,
-        disciplina
-    )
-
-    if bar_fim is None:
-        return comp
-
-    rank_ini = ranking_municipios_ano(
-        etapa,
-        ano_ini,
-        disciplina,
-        rede_comparacao
-    )
-    rank_fim = ranking_municipios_ano(
-        etapa,
-        ano_fim,
-        disciplina,
-        rede_comparacao
-    )
-
-    pos_ini = (
-        posicao_referencia_no_universo(
-            bar_ini["Pontuação"],
-            rank_ini,
-            disciplina
-        )
-        if bar_ini is not None
-        else pd.NA
-    )
-
-    pos_fim = posicao_referencia_no_universo(
-        bar_fim["Pontuação"],
-        rank_fim,
-        disciplina
-    )
-
-    nivel_ini = (
-        bar_ini["Nível"]
-        if bar_ini is not None
-        else pd.NA
-    )
-
-    nivel_fim = bar_fim["Nível"]
-
-    variacao_pos = (
-        pos_ini - pos_fim
-        if pd.notna(pos_ini) and pd.notna(pos_fim)
-        else pd.NA
-    )
-
-    variacao_nivel = (
-        float(nivel_fim) - float(nivel_ini)
-        if pd.notna(nivel_ini) and pd.notna(nivel_fim)
-        else pd.NA
-    )
-
-    linha = {
-        "Município": "Barueri",
-        "Rede Atual": "Municipal (referência)",
-        "Pontuação Atual": bar_fim["Pontuação"],
-        "Nível Atual": nivel_fim,
-        "Padrão Atual": bar_fim["Padrão"],
-        "Posição Atual": pos_fim,
-        "Rede Inicial": "Municipal (referência)",
-        "Pontuação Inicial": (
-            bar_ini["Pontuação"]
-            if bar_ini is not None
-            else pd.NA
-        ),
-        "Nível Inicial": nivel_ini,
-        "Padrão Inicial": (
-            bar_ini["Padrão"]
-            if bar_ini is not None
-            else pd.NA
-        ),
-        "Posição Inicial": pos_ini,
-        "Variação de Posição": variacao_pos,
-        "Variação de Nível": variacao_nivel,
-        "Movimento": texto_movimento(variacao_pos),
-        "Mudança de Nível": texto_mudanca_nivel(variacao_nivel),
-        "Nível Atual Texto": (
-            "—" if pd.isna(nivel_fim)
-            else f"Nível {int(float(nivel_fim))}"
-        ),
-        "Nível Inicial Texto": (
-            "—" if pd.isna(nivel_ini)
-            else f"Nível {int(float(nivel_ini))}"
-        ),
-        "_Referencia": True,
-    }
-
-    comp2 = comp.copy()
-    comp2["_Referencia"] = False
-
-    # Evita duplicar Barueri se a rede selecionada também for Municipal.
-    comp2 = comp2[
-        comp2["Município"] != "Barueri"
-    ]
-
-    comp2 = pd.concat(
-        [comp2, pd.DataFrame([linha])],
-        ignore_index=True
-    )
-
-    return comp2.sort_values(
-        ["Posição Atual", "Município"]
-    ).reset_index(drop=True)
-
-def grafico_ranking_movimento(
-    comp,
-    entidade,
-    etapa,
-    disciplina,
-    ano_ini,
-    ano_fim,
-    quantidade=20,
-    destaque=None,
-    rede_comparacao=None
-):
-    chave = "Município" if entidade == "Município" else "Escola"
-    cores = cores_niveis(etapa)
-
-    base_plot = comp.copy()
-
-    if quantidade == "Todos":
-        plot = base_plot.copy()
-    else:
-        if entidade == "Município" and "_Referencia" in base_plot.columns:
-            referencia = base_plot[
-                base_plot["_Referencia"] == True
-            ].copy()
-
-            universo = base_plot[
-                base_plot["_Referencia"] != True
-            ].copy()
-
-            plot = universo.head(int(quantidade)).copy()
-
-            if not referencia.empty:
-                plot = pd.concat(
-                    [plot, referencia],
-                    ignore_index=True
-                )
-        else:
-            plot = base_plot.head(int(quantidade)).copy()
-
-    if entidade == "Escola" and destaque and destaque != "Nenhuma":
-        if destaque in base_plot[chave].values and destaque not in plot[chave].values:
-            plot = pd.concat(
-                [plot, base_plot[base_plot[chave] == destaque]],
-                ignore_index=True
-            )
-
-    plot = (
-        plot.drop_duplicates(chave)
-        .sort_values("Posição Atual", ascending=False)
-        .copy()
-    )
-
-    plot["_Cor"] = plot["Nível Atual"].apply(
-        lambda x: "#BDBDBD"
-        if pd.isna(x)
-        else cores.get(int(x), "#BDBDBD")
-    )
-
-    plot["_Texto"] = plot.apply(
-        lambda r:
-        f'{int(r["Posição Atual"])}º | {r["Movimento"]} | {r["Nível Atual Texto"]}',
-        axis=1
-    )
-
-    custom = np.column_stack([
-        plot["Pontuação Atual"].fillna(np.nan),
-        plot["Posição Inicial"].fillna(np.nan),
-        plot["Posição Atual"].fillna(np.nan),
-        plot["Movimento"].fillna("—"),
-        plot["Nível Inicial Texto"].fillna("—"),
-        plot["Nível Atual Texto"].fillna("—"),
-        plot["Mudança de Nível"].fillna("—"),
-        plot["Padrão Atual"].fillna("—"),
-        (
-            plot["Rede Atual"].fillna("—")
-            if "Rede Atual" in plot.columns
-            else pd.Series(["—"] * len(plot))
-        ),
-    ])
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=plot["Pontuação Atual"],
-            y=plot[chave],
-            orientation="h",
-            marker_color=plot["_Cor"],
-            text=plot["_Texto"],
-            textposition="outside",
-            customdata=custom,
-            hovertemplate=(
-                "<b>%{y}</b><br>"
-                f"{disciplina}: %{{customdata[0]:.1f}}<br>"
-                f"Posição em {ano_ini}: %{{customdata[1]}}<br>"
-                f"Posição em {ano_fim}: %{{customdata[2]}}<br>"
-                "Movimento: %{customdata[3]}<br>"
-                "Nível inicial: %{customdata[4]}<br>"
-                "Nível atual: %{customdata[5]}<br>"
-                "Mudança de nível: %{customdata[6]}<br>"
-                "Padrão atual: %{customdata[7]}<br>"
-                "Rede: %{customdata[8]}"
-                "<extra></extra>"
-            )
-        )
-    )
-
-    titulo_entidade = (
-        "municípios"
-        if entidade == "Município"
-        else "escolas"
-    )
-
-    subtitulo_rede = (
-        f" • Rede de comparação: {rede_comparacao}"
-        if entidade == "Município" and rede_comparacao
-        else ""
-    )
-
-    fig.update_layout(
-        title=dict(
-            text=(
-                f"Ranking de {titulo_entidade} — {disciplina} — "
-                f"{etapa} — {ano_fim}{subtitulo_rede}"
-            ),
-            x=.01,
-            xanchor="left",
-            font=dict(size=18)
-        ),
-        height=max(520, len(plot) * 34),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        margin=dict(l=40, r=180, t=85, b=45),
-        showlegend=False,
-        xaxis_title=f"Proficiência em {disciplina}",
-        yaxis_title="",
-        font=dict(
-            family="Arial, sans-serif",
-            color="#26313b"
-        ),
-    )
-
-    fig.update_xaxes(
-        gridcolor="#EDF1F4",
-        zeroline=False
-    )
-
-    fig.update_yaxes(
-        showgrid=False
-    )
-
-    return fig
-
-
-def tabela_ranking_exibicao(comp, entidade):
-    chave = "Município" if entidade == "Município" else "Escola"
-
-    cols = [
-        chave,
-        "Posição Inicial",
-        "Posição Atual",
-        "Movimento",
-        "Pontuação Inicial",
-        "Pontuação Atual",
-        "Nível Inicial Texto",
-        "Nível Atual Texto",
-        "Mudança de Nível",
-        "Padrão Atual",
-    ]
-
-    if entidade == "Município":
-        cols.insert(1, "Rede Atual")
-
-    out = comp[cols].copy()
-
-    out = out.rename(columns={
-        "Nível Inicial Texto": "Nível inicial",
-        "Nível Atual Texto": "Nível atual",
-        "Padrão Atual": "Padrão atual",
-    })
-
-    return out
-
-
-def media_rede_recorte(etapa, ano, indicador, rede):
-    """
-    Média simples dos municípios com resultado publicado na combinação
-    etapa + ano + indicador + rede. É um recorte analítico do painel,
-    não uma média oficial ponderada por matrícula.
-    """
-    x = municipios[
-        (municipios["Etapa"] == etapa) &
-        (municipios["Ano"] == ano) &
-        (municipios["Rede"] == rede)
-    ].copy()
-
-    x[indicador] = pd.to_numeric(x[indicador], errors="coerce")
-    x = x.dropna(subset=[indicador])
-
-    # Um valor por município dentro da mesma rede.
-    x = (
-        x.sort_values(["Município", indicador], ascending=[True, False])
-        .drop_duplicates("Município", keep="first")
-    )
-
-    if x.empty:
-        return np.nan, 0
-
-    return float(x[indicador].mean()), int(x["Município"].nunique())
-
-def historico_rede_barueri(etapa):
-    x = dados_municipio("Barueri", etapa, rede="Municipal").copy()
-    cols = ["Ano","IDEB","Aprovação Geral","Língua Portuguesa","Matemática","Meta IDEB"]
-    return x[[c for c in cols if c in x.columns]].sort_values("Ano")
-
-def fig_escala_saeb(row, etapa, disciplina, anos_referencia=None):
-    """
-    Escala visual por níveis. O resultado fica abaixo da barra,
-    evitando cobrir os níveis da escala.
-    """
-    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
-    valor = row.get(coluna)
-    nivel = row.get(coluna_nivel)
-
-    faixas = FAIXAS_NIVEIS[etapa]
-    niveis = [n for n, _ in faixas]
-    maxn = max(niveis) if niveis else 1
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=[1] * len(niveis),
-        y=["Escala"] * len(niveis),
-        orientation="h",
-        marker_color=[
-            cores_niveis(etapa).get(n, "#BDBDBD")
-            for n in niveis
-        ],
-        text=[str(n) for n in niveis],
-        textposition="inside",
-        insidetextanchor="middle",
-        hovertext=[
-            f"Nível {n} • {faixa}"
-            for n, faixa in faixas
-        ],
-        hovertemplate="%{hovertext}<extra></extra>",
-        showlegend=False
-    ))
-
-    if pd.notna(valor) and pd.notna(nivel):
-        n = int(float(nivel))
-        xpos = (n + .5) / (maxn + 1)
-
-        # Linha discreta aponta para a posição; o rótulo fica abaixo.
-        fig.add_shape(
-            type="line",
-            x0=xpos, x1=xpos,
-            y0=.38, y1=.60,
-            xref="paper", yref="paper",
-            line=dict(color="#0E5A70", width=3)
-        )
-
-        fig.add_annotation(
-            x=xpos,
-            y=.03,
-            xref="paper",
-            yref="paper",
-            text=f"<b>{fmt(valor,2)}</b> • Nível {n}",
-            showarrow=False,
-            bgcolor="#0E5A70",
-            bordercolor="#0E5A70",
-            borderpad=6,
-            font=dict(color="white", size=11)
-        )
-
-    fig.update_layout(
-        barmode="stack",
-        height=210,
-        margin=dict(l=20, r=20, t=40, b=55),
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        title=dict(
-            text=f"{disciplina} — {etapa}",
-            x=.01,
-            xanchor="left",
-            font=dict(size=16)
-        )
-    )
-
-    return fig
-
-
-def resultado_evolucao_barueri(etapa, disciplina, anos=(2019, 2023, 2025)):
-    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
-    base = dados_municipio("Barueri", etapa, rede="Municipal")
-    out = []
-    for ano in anos:
-        r = ultima_linha(base, ano)
-        if r is not None and pd.notna(r.get(coluna)):
-            out.append({
-                "Ano": ano,
-                "Valor": float(r.get(coluna)),
-                "Nível": r.get(coluna_nivel)
-            })
-    return pd.DataFrame(out)
-
-def fig_matriz_nivel_tendencia(
-    df,
-    entidade,
-    disciplina,
-    ano_ini,
-    ano_fim,
-    etapa,
-    incluir_itbs=True
-):
-    chave = "Município" if entidade == "Município" else "Escola"
-    coluna, coluna_nivel, _ = colunas_disciplina(disciplina)
-
-    if entidade == "Município":
-        ini = ranking_municipios_ano(etapa, ano_ini, disciplina, "Municipal")
-        fim = ranking_municipios_ano(etapa, ano_fim, disciplina, "Municipal")
-    else:
-        ini = ranking_escolas_ano(etapa, ano_ini, disciplina)
-        fim = ranking_escolas_ano(etapa, ano_fim, disciplina)
-
-    ini = ini[[chave, coluna]].rename(columns={coluna:"Valor Inicial"})
-    fim = fim[[chave, coluna, coluna_nivel]].rename(
-        columns={coluna:"Valor Atual", coluna_nivel:"Nível Atual"}
-    )
-    comp = fim.merge(ini, on=chave, how="left")
-    comp["Variação"] = comp["Valor Atual"] - comp["Valor Inicial"]
-
-    def classe(v):
-        if pd.isna(v):
-            return "Sem comparação"
-        if v > 0.5:
-            return "Avanço"
-        if v < -0.5:
-            return "Recuo"
-        return "Estabilidade"
-
-    comp["Tendência"] = comp["Variação"].apply(classe)
-    mapa_cores = {
-        "Avanço":"#2E8B57",
-        "Estabilidade":"#7A8490",
-        "Recuo":"#C44747",
-        "Sem comparação":"#B8C0C8",
-    }
-
-    fig = go.Figure()
-    for cat in ["Avanço","Estabilidade","Recuo","Sem comparação"]:
-        s = comp[comp["Tendência"] == cat]
-        if s.empty:
-            continue
-        fig.add_trace(go.Scatter(
-            x=s["Valor Atual"],
-            y=s["Variação"],
-            mode="markers",
-            name=cat,
-            marker=dict(size=9, color=mapa_cores[cat]),
-            text=s[chave],
-            customdata=np.column_stack([
-                s["Nível Atual"].fillna(np.nan),
-                s["Valor Inicial"].fillna(np.nan),
-                s["Valor Atual"].fillna(np.nan)
-            ]),
-            hovertemplate=(
-                "<b>%{text}</b><br>"
-                f"{disciplina} {ano_ini}: %{{customdata[1]:.2f}}<br>"
-                f"{disciplina} {ano_fim}: %{{customdata[2]:.2f}}<br>"
-                "Variação: %{y:.2f}<br>"
-                "Nível atual: %{customdata[0]}"
-                "<extra></extra>"
-            )
-        ))
-
-    fig.add_hline(y=0, line_dash="dash", line_color="#8A94A0")
-    mediana = comp["Valor Atual"].median()
-    if pd.notna(mediana):
-        fig.add_vline(x=mediana, line_dash="dash", line_color="#7FA1B0")
-
-    fig.update_layout(
-        title=dict(
-            text=f"Matriz nível × tendência — {disciplina} — {etapa}",
-            x=.01, xanchor="left", font=dict(size=18)
-        ),
-        height=520,
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        margin=dict(l=55,r=30,t=70,b=50),
-        xaxis_title=f"{disciplina} {ano_fim} (resultado atual)",
-        yaxis_title=f"Variação {ano_ini} → {ano_fim}",
-        legend=dict(orientation="h", y=1.08, x=0),
-    )
-    fig.update_xaxes(gridcolor="#EDF1F4")
-    fig.update_yaxes(gridcolor="#EDF1F4")
-    return fig, comp
-
-def cards_movimento(comp):
-    total = len(comp)
-    avanc = int((comp["Tendência"] == "Avanço").sum())
-    est = int((comp["Tendência"] == "Estabilidade").sum())
-    rec = int((comp["Tendência"] == "Recuo").sum())
-    sem = int((comp["Tendência"] == "Sem comparação").sum())
-
-    cols = st.columns(4)
-    dados = [
-        ("↑ Avanço", avanc, "#D9F1E2"),
-        ("— Estabilidade", est, "#E7ECF2"),
-        ("↓ Recuo", rec, "#F7D8D5"),
-        ("Sem comparação", sem, "#E4EDF2"),
-    ]
-    for col, (rot, val, cor) in zip(cols, dados):
-        col.markdown(
-            f'<div class="metric-card" style="background:{cor};">'
-            f'<div class="metric-label">{rot}</div>'
-            f'<div class="metric-value">{val}</div>'
-            f'<div class="metric-foot">de {total} unidades consideradas</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
 
 def grafico_notas_padronizadas_componentes(df, titulo):
     """
@@ -1549,7 +511,7 @@ def grafico_notas_padronizadas_componentes(df, titulo):
             fmt(v, 2) if pd.notna(v) else ""
             for v in df["Nota Padronizada Matemática"]
         ],
-        textposition="bottom center",
+        textposition="top center",
         line=dict(color=LILAS, width=3),
         marker=dict(size=8)
     ))
@@ -1598,7 +560,7 @@ def grafico_composicao_ideb_temporal(df, titulo):
         mode="lines+markers+text",
         name="IDEB",
         text=[fmt(v,1) if pd.notna(v) else "" for v in df["IDEB"]],
-        textposition="bottom center",
+        textposition="top center",
         line=dict(color=LARANJA, width=3),
         marker=dict(size=8)
     ))
@@ -2314,6 +1276,55 @@ def ranking_selecionados_municipios(
     return comp.sort_values(["Posição Atual", "Município"]).reset_index(drop=True)
 
 
+
+# Cores fixas de indicadores que NÃO possuem padrão pedagógico.
+COR_RANK_IDEB = "#1F6F78"   # azul-petróleo
+COR_RANK_N = "#8A63A8"      # lilás
+
+
+def estilo_indicador_ranking(indicador_label, padrao=None):
+    """
+    IDEB e N: cor identifica o indicador, não nível de aprendizagem.
+    LP/Matemática: cor continua identificando o padrão pedagógico.
+    """
+    nome = str(indicador_label).strip().lower()
+
+    if nome == "ideb":
+        return COR_RANK_IDEB, None
+
+    if nome in {
+        "n",
+        "nota média padronizada (n)",
+        "nota media padronizada (n)"
+    }:
+        return COR_RANK_N, None
+
+    # Para proficiências SAEB, mantém a classificação já construída.
+    return cor_padrao(padrao), padrao
+
+
+
+def texto_classificacao_ranking(indicador_label, nivel=None, padrao=None):
+    """
+    Só proficiências SAEB de LP/Matemática exibem nível/padrão.
+    IDEB e N retornam texto vazio.
+    """
+    nome = str(indicador_label).strip().lower()
+    if nome == "ideb" or nome in {
+        "n",
+        "nota média padronizada (n)",
+        "nota media padronizada (n)"
+    }:
+        return ""
+
+    partes = []
+    if pd.notna(nivel) and str(nivel).strip() not in {"", "<NA>", "nan"}:
+        partes.append(str(nivel))
+    if pd.notna(padrao) and str(padrao).strip() not in {"", "<NA>", "nan"}:
+        partes.append(str(padrao))
+    return " — ".join(partes)
+
+
 def cor_movimento(valor):
     if pd.isna(valor):
         return "#6B7280"
@@ -2744,20 +1755,76 @@ def grafico_ranking_download(comp, entidade, indicador_label, quantidade="Todos"
 
 
 
-def grafico_comparativo_qedu_fi_2025(fi_barueri):
-    """
-    Comparação histórica no padrão visual do QEdu.
-    Barueri vem da base do projeto.
-    São Paulo e Brasil são referências temporárias transcritas
-    da visualização QEdu enviada para o projeto.
-    """
-    anos = [2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023, 2025]
 
-    sp = [5.0, 5.5, 5.6, 6.1, 6.4, 6.6, 6.7, 6.3, 6.5, 6.6]
-    brasil = [4.2, 4.6, 5.0, 5.2, 5.5, 5.8, 5.9, 5.8, 6.0, 6.3]
+def adicionar_rotulos_acima(fig, x, y, casas=1, cor="#26313b", yshift=14):
+    """
+    Adiciona os valores sempre acima dos pontos.
+    Usa yshift positivo e fundo branco translúcido para evitar
+    que o número fique sobre a própria linha ou sobre outra série.
+    """
+    for xv, yv in zip(list(x), list(y)):
+        if pd.isna(yv):
+            continue
+        fig.add_annotation(
+            x=xv,
+            y=float(yv),
+            text=fmt(yv, casas),
+            showarrow=False,
+            yshift=yshift,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(size=11, color=cor),
+            bgcolor="rgba(255,255,255,0.82)",
+            borderpad=1
+        )
+
+
+def grafico_comparativo_referencias_historico(df_barueri, etapa):
+    """
+    Evolução do IDEB no estilo visual do QEdu.
+
+    Fundamental I:
+    - São Paulo e Brasil: série temporária transcrita da visualização QEdu
+      usada como referência no projeto.
+
+    Fundamental II:
+    - São Paulo e Brasil: série histórica de referência MEC/Inep.
+      2025 usa os resultados divulgados em agosto de 2026.
+    """
+    cores = {
+        "Barueri": "#22305B",
+        "São Paulo": "#F2B800",
+        "Brasil": "#58B7CF",
+    }
+
+    if etapa == "Fundamental I":
+        anos = [2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023, 2025]
+        sp = [5.0, 5.5, 5.6, 6.1, 6.4, 6.6, 6.7, 6.3, 6.5, 6.6]
+        brasil = [4.2, 4.6, 5.0, 5.2, 5.5, 5.8, 5.9, 5.8, 6.0, 6.3]
+        y_min, y_max = 4.0, 7.2
+        fonte = (
+            "São Paulo e Brasil: referências temporárias da série exibida pelo QEdu; "
+            "Barueri: base do Inep utilizada neste projeto."
+        )
+    else:
+        anos = [2005, 2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023, 2025]
+
+        # Referência estadual total de São Paulo.
+        # Série 2005–2023 reconstruída a partir dos resultados MEC/Inep;
+        # 2025 = 5,5 divulgado pelo Inep em agosto de 2026.
+        sp = [4.2, 4.4, 4.5, 4.7, 4.7, 5.0, 5.2, 5.4, 5.5, 5.4, 5.5]
+
+        # Brasil total — anos finais.
+        brasil = [3.5, 3.8, 4.0, 4.1, 4.2, 4.5, 4.7, 4.9, 5.1, 5.0, 5.3]
+
+        y_min, y_max = 3.2, 6.2
+        fonte = (
+            "São Paulo e Brasil: série histórica MEC/Inep; "
+            "Barueri: Rede Municipal, base do Inep utilizada neste projeto."
+        )
 
     bar_map = (
-        fi_barueri[["Ano", "IDEB"]]
+        df_barueri[["Ano", "IDEB"]]
         .dropna(subset=["Ano"])
         .assign(Ano=lambda x: x["Ano"].astype(int))
         .set_index("Ano")["IDEB"]
@@ -2768,48 +1835,42 @@ def grafico_comparativo_qedu_fi_2025(fi_barueri):
     fig = go.Figure()
 
     series = [
-        ("Barueri", barueri, "#22305B"),
-        ("São Paulo", sp, "#F2B800"),
-        ("Brasil", brasil, "#58B7CF"),
+        ("Barueri", barueri, cores["Barueri"], 16),
+        ("São Paulo", sp, cores["São Paulo"], 30),
+        ("Brasil", brasil, cores["Brasil"], 44),
     ]
 
-    for nome, valores, cor in series:
+    # Sem texto embutido na própria trace:
+    # os valores são adicionados depois como annotations, sempre acima.
+    for nome, valores, cor, deslocamento in series:
         fig.add_trace(go.Scatter(
             x=anos,
             y=valores,
-            mode="lines+markers+text",
+            mode="lines+markers",
             name=nome,
-            text=[fmt(v,1) if pd.notna(v) else "" for v in valores],
-            textposition="top center",
             line=dict(color=cor, width=3),
             marker=dict(size=8, color=cor),
-            hovertemplate=f"<b>{nome}</b><br>Ano: %{{x}}<br>IDEB: %{{y:.1f}}<extra></extra>"
+            hovertemplate=(
+                f"<b>{nome}</b><br>Ano: %{{x}}<br>IDEB: %{{y:.1f}}<extra></extra>"
+            )
         ))
-
-    # Eixo aproximado para evidenciar melhor a distância relativa.
-    valores_validos = [
-        float(v)
-        for serie in [barueri, sp, brasil]
-        for v in serie
-        if pd.notna(v)
-    ]
-    minimo = min(valores_validos)
-    maximo = max(valores_validos)
-
-    # Escala mais próxima dos valores observados.
-    # Mantém um intervalo estável para facilitar comparação visual
-    # sem começar em zero e "achatar" as três linhas.
-    y_min = 4.0
-    y_max = 7.2
+        adicionar_rotulos_acima(
+            fig,
+            anos,
+            valores,
+            casas=1,
+            cor=cor,
+            yshift=deslocamento
+        )
 
     fig.update_layout(
         title=dict(
-            text="Evolução do IDEB — Barueri × São Paulo × Brasil — Fundamental I",
+            text=f"Evolução do IDEB — Barueri × São Paulo × Brasil — {etapa}",
             x=.01,
             xanchor="left"
         ),
-        height=500,
-        margin=dict(l=55, r=35, t=70, b=55),
+        height=520,
+        margin=dict(l=55, r=35, t=95, b=65),
         paper_bgcolor="white",
         plot_bgcolor="white",
         hovermode="x unified",
@@ -2835,88 +1896,53 @@ def grafico_comparativo_qedu_fi_2025(fi_barueri):
         )
     )
 
-    return fig
+    return fig, fonte
 
-
-def comparativo_ideb_referencias_2025(etapa, valor_barueri):
-    """
-    Comparação pontual para Fundamental II enquanto a série histórica
-    de referência equivalente não estiver incorporada.
-    """
-    refs = {
-        "Fundamental II": {
-            "São Paulo": 5.5,
-            "Brasil": 5.3,
-        }
-    }
-
-    dados = refs[etapa]
-    sp = dados["São Paulo"]
-    br = dados["Brasil"]
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=[valor_barueri, sp, br],
-        y=["Barueri — Municipal", "São Paulo — Total", "Brasil — Total"],
-        mode="markers+text",
-        text=[fmt(valor_barueri,1), fmt(sp,1), fmt(br,1)],
-        textposition="middle right",
-        marker=dict(
-            size=18,
-            color=["#22305B", "#F2B800", "#58B7CF"]
-        ),
-        hovertemplate="%{y}<br>IDEB: %{x:.1f}<extra></extra>"
-    ))
-
-    vals = [float(valor_barueri), sp, br]
-    x_min = max(0, min(vals) - .35)
-    x_max = min(10, max(vals) + .35)
-
-    fig.update_layout(
-        title=dict(
-            text="IDEB 2025 — Barueri × São Paulo × Brasil — Fundamental II",
-            x=.01, xanchor="left"
-        ),
-        height=330,
-        margin=dict(l=170, r=90, t=65, b=45),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        showlegend=False,
-        xaxis=dict(
-            title="IDEB",
-            range=[x_min, x_max],
-            dtick=.2,
-            gridcolor="#E7EBEF"
-        ),
-        yaxis=dict(title="")
-    )
-
-    return fig
 
 
 def grafico_executivo_ideb_rede(fi, fii):
     fig = go.Figure()
-    for df, etapa, cor in [
-        (fi, "Fundamental I", "#0E5A70"),
-        (fii, "Fundamental II", "#7C3AED"),
-    ]:
+
+    series = [
+        (fi, "Fundamental I", "#0E5A70", 16),
+        (fii, "Fundamental II", "#7C3AED", 32),
+    ]
+
+    for df, etapa, cor, deslocamento in series:
         d = df.copy().sort_values("Ano")
+
         fig.add_trace(go.Scatter(
-            x=d["Ano"], y=d["IDEB"], mode="lines+markers+text",
+            x=d["Ano"],
+            y=d["IDEB"],
+            mode="lines+markers",
             name=f"IDEB — {etapa}",
-            text=[fmt(v,1) if pd.notna(v) else "" for v in d["IDEB"]],
-            textposition="top center",
-            line=dict(color=cor, width=3), marker=dict(size=8)
+            line=dict(color=cor, width=3),
+            marker=dict(size=8)
         ))
+
+        adicionar_rotulos_acima(
+            fig, d["Ano"], d["IDEB"],
+            casas=1, cor=cor, yshift=deslocamento
+        )
+
         if "Meta IDEB" in d.columns and d["Meta IDEB"].notna().any():
             fig.add_trace(go.Scatter(
-                x=d["Ano"], y=d["Meta IDEB"], mode="lines+markers",
+                x=d["Ano"],
+                y=d["Meta IDEB"],
+                mode="lines+markers",
                 name=f"Meta — {etapa}",
                 line=dict(color=cor, width=1.8, dash="dot"),
-                marker=dict(size=6), opacity=.72
+                marker=dict(size=6),
+                opacity=.72
             ))
-    estilo_fig(fig, "Evolução do IDEB e metas — Rede Municipal de Barueri", "IDEB", 520)
+
+    estilo_fig(
+        fig,
+        "Evolução do IDEB e metas — Rede Municipal de Barueri",
+        "IDEB",
+        540
+    )
+    fig.update_layout(margin=dict(l=35, r=35, t=95, b=45))
     fig.update_yaxes(rangemode="tozero")
     return fig
 
@@ -3054,61 +2080,74 @@ if pagina == "Visão Geral":
         with c2:
             card_ranking_barueri_executivo("Fundamental II", anterior_fii, atual_fii)
 
-        st.markdown('<div class="section-title">Onde Barueri está na escala Saeb</div>', unsafe_allow_html=True)
-        st.caption("A interpretação detalhada dos níveis fica em Metodologia e dados.")
-        t1, t2 = st.tabs(["Fundamental I", "Fundamental II"])
-        with t1:
-            st.plotly_chart(fig_escala_saeb(rfi, "Fundamental I", "Língua Portuguesa"), use_container_width=True)
-            st.plotly_chart(fig_escala_saeb(rfi, "Fundamental I", "Matemática"), use_container_width=True)
-        with t2:
-            st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Língua Portuguesa"), use_container_width=True)
-            st.plotly_chart(fig_escala_saeb(rfii, "Fundamental II", "Matemática"), use_container_width=True)
+        # Um único seletor controla as duas seções abaixo.
+        etapa_visao = st.segmented_control(
+            "Etapa para os gráficos da visão geral",
+            ["Fundamental I", "Fundamental II", "Ambos"],
+            default="Ambos",
+            selection_mode="single",
+            key="visao_geral_etapa"
+        ) or "Ambos"
+
+        etapas_exibir = (
+            ["Fundamental I", "Fundamental II"]
+            if etapa_visao == "Ambos"
+            else [etapa_visao]
+        )
+
+        st.markdown(
+            '<div class="section-title">Onde Barueri está na escala Saeb</div>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "A interpretação detalhada dos níveis fica em Metodologia e dados. "
+            "A etapa selecionada acima vale também para a comparação com São Paulo e Brasil."
+        )
+
+        for etapa_atual in etapas_exibir:
+            row_atual = rfi if etapa_atual == "Fundamental I" else rfii
+
+            if etapa_visao == "Ambos":
+                st.markdown(
+                    f'<div style="font-size:15px;font-weight:800;margin:12px 0 6px;">'
+                    f'{etapa_atual}</div>',
+                    unsafe_allow_html=True
+                )
+
+            st.plotly_chart(
+                fig_escala_saeb(row_atual, etapa_atual, "Língua Portuguesa"),
+                use_container_width=True
+            )
+            st.plotly_chart(
+                fig_escala_saeb(row_atual, etapa_atual, "Matemática"),
+                use_container_width=True
+            )
 
         st.markdown(
             '<div class="section-title">Barueri × Estado de São Paulo × Brasil</div>',
             unsafe_allow_html=True
         )
         st.caption(
-            "Comparação de referência inspirada no modelo do QEdu. "
-            "O eixo é aproximado para tornar visíveis diferenças pequenas entre as três trajetórias; "
-            "por isso, a leitura deve considerar os valores indicados em cada ponto."
+            "Comparação histórica em linhas. Todos os valores numéricos ficam acima "
+            "dos pontos, com deslocamentos diferentes para reduzir sobreposições."
         )
 
-        ref_tabs = st.tabs(["Fundamental I", "Fundamental II"])
+        for etapa_atual in etapas_exibir:
+            base_barueri = fi if etapa_atual == "Fundamental I" else fii
+            fig_ref, fonte_ref = grafico_comparativo_referencias_historico(
+                base_barueri,
+                etapa_atual
+            )
 
-        with ref_tabs[0]:
             st.plotly_chart(
-                grafico_comparativo_qedu_fi_2025(fi),
+                fig_ref,
                 use_container_width=True,
                 config={
                     "displaylogo": False,
                     "toImageButtonOptions": {"format": "png", "scale": 2}
                 }
             )
-            st.caption(
-                "Recorte temporário desta série: Rede Municipal. "
-                "Barueri vem da base do Inep utilizada no projeto; "
-                "São Paulo e Brasil são referências temporárias da série exibida pelo QEdu. "
-                "Este gráfico é apenas contextual e não participa dos rankings municipais."
-            )
-
-        with ref_tabs[1]:
-            st.plotly_chart(
-                comparativo_ideb_referencias_2025(
-                    "Fundamental II",
-                    rfii.get("IDEB")
-                ),
-                use_container_width=True,
-                config={
-                    "displaylogo": False,
-                    "toImageButtonOptions": {"format": "png", "scale": 2}
-                }
-            )
-            st.caption(
-                "Fundamental II: comparação pontual de 2025. "
-                "A série histórica de São Paulo e Brasil será incorporada quando tivermos "
-                "o recorte equivalente consolidado."
-            )
+            st.caption(fonte_ref + " Este gráfico não participa dos rankings municipais.")
 
         st.markdown('<div class="section-title">Trajetória histórica</div>', unsafe_allow_html=True)
         st.plotly_chart(
@@ -3912,7 +2951,7 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
             # ------------------------------------------------
             # 2º passo: período e quantidade.
             # ------------------------------------------------
-            with st.form("form_ranking_municipios_v294"):
+            with st.form("form_ranking_municipios_v298"):
                 c4,c5,c6 = st.columns([1,1,1.2])
 
                 with c4:
@@ -3943,13 +2982,23 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
 
                 st.form_submit_button("Aplicar ranking", type="primary")
 
-            total_base = municipios["Município"].nunique()
+            coluna_rank_m = RANKING_INDICADORES[indicador_m]["coluna"]
 
-            universo_rede = (
-                municipios.loc[
-                    (municipios["Etapa"] == etapa_m) &
-                    (municipios["Rede"] == rede_m) &
-                    (municipios["Ano"] == ano_fim_m),
+            base_rede_ano = municipios.loc[
+                (municipios["Etapa"] == etapa_m) &
+                (municipios["Rede"] == rede_m) &
+                (municipios["Ano"] == ano_fim_m)
+            ].copy()
+
+            municipios_na_rede = base_rede_ano["Município"].dropna().nunique()
+
+            valores_validos = pd.to_numeric(
+                base_rede_ano[coluna_rank_m],
+                errors="coerce"
+            )
+            municipios_com_resultado = (
+                base_rede_ano.loc[
+                    valores_validos.notna(),
                     "Município"
                 ]
                 .dropna()
@@ -3957,10 +3006,11 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
             )
 
             st.caption(
-                f"Base municipal: {total_base} municípios únicos. "
-                f"Universo desta comparação: {universo_rede} municípios com registro "
-                f"na Rede {rede_m}, {etapa_m}, em {ano_fim_m}. "
-                "Barueri entra sempre como referência da Rede Municipal."
+                f"Rede {rede_m} • {etapa_m} • {ano_fim_m}: "
+                f"{municipios_na_rede} municípios possuem registro nessa rede; "
+                f"{municipios_com_resultado} têm resultado válido para {indicador_m}. "
+                "O ranking é calculado somente depois desse filtro. "
+                "Barueri permanece como referência da Rede Municipal."
             )
 
             if modo_rank_m == "Ranking geral":
@@ -3987,7 +3037,7 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
                 st.markdown(
                     f'<div class="info"><b>Rede selecionada:</b> {rede_m}. '
                     f'<b>Universo efetivo do ranking:</b> '
-                    f'{universo["Município"].nunique()} municípios com resultado publicado '
+                    f'{universo["Município"].nunique()} municípios com resultado válido '
                     f'para {indicador_m} em {ano_fim_m} — {etapa_m}. '
                     f'<br><b>Barueri:</b> permanece como referência da Rede Municipal, '
                     f'mesmo quando a comparação escolhida é Pública, Estadual ou Federal. '
