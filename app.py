@@ -3939,6 +3939,29 @@ elif pagina == "Municípios" and sub_municipios == "Aprendizagem e rankings":
                     use_container_width=True
                 )
 
+                st.markdown(
+                    '<div class="section-title">Aprendizagem e Nota Média Padronizada (N)</div>',
+                    unsafe_allow_html=True
+                )
+                st.caption(
+                    "As barras mostram as proficiências Saeb de Língua Portuguesa e Matemática; "
+                    "a linha mostra a Nota Média Padronizada (N), na escala 0–10."
+                )
+                st.plotly_chart(
+                    grafico_lp_mat_n(
+                        base,
+                        f"LP + Matemática × N — Barueri — {etapa}"
+                    ),
+                    use_container_width=True,
+                    config={
+                        "displaylogo": False,
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 2
+                        }
+                    }
+                )
+
         with abas_apr[1]:
             st.markdown(
                 '<div class="section-title">Escalas de proficiência do SAEB usadas no painel</div>',
@@ -4435,7 +4458,7 @@ elif pagina == "Municípios" and sub_municipios == "Comparar municípios":
             else anos_por_etapa[0]
         )
 
-        with st.form("form_comparacao_municipio_v2102"):
+        with st.form("form_comparacao_municipio_v2103"):
             c1, c2 = st.columns(2)
             with c1:
                 ano_ini = st.selectbox(
@@ -4579,8 +4602,8 @@ elif pagina == "Municípios" and sub_municipios == "Comparar municípios":
                 unsafe_allow_html=True
             )
             st.caption(
-                "Cada município é independente. A linha curta mostra a distância "
-                "entre N e IDEB na mesma escala 0–10; P aparece como fator de rendimento."
+                "Cada município é independente. Esta visualização apresenta a composição correta do IDEB: "
+                "N × P → IDEB. N representa a aprendizagem padronizada e P o indicador de rendimento."
             )
 
             nomes = ["Barueri"] + outros
